@@ -1297,8 +1297,8 @@ function TunzAccessoriesSuite() {
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase text-emerald-700">Customer Billing</div>
-                <div className="font-extrabold text-sm text-slate-900">Payment & Receipts</div>
-                <div className="text-[11px] text-slate-500">Pay, Upload & Get Receipt</div>
+                <div className="font-extrabold text-sm text-slate-900">Payment Portal</div>
+                <div className="text-[11px] text-slate-500">Pay & Upload Receipt Slip</div>
               </div>
             </button>
           </div>
@@ -1546,57 +1546,7 @@ function TunzAccessoriesSuite() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-lg font-extrabold text-[#162238] flex items-center gap-2">
-                      <Receipt className="w-5 h-5 text-emerald-700" /> Verified Official Receipts
-                    </h4>
-                    <p className="text-xs text-slate-500">Search by Receipt #, Client Name, or Payment Reference to view or print your verified receipt.</p>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Search Receipt # or Name..."
-                    value={receiptLookupInput}
-                    onChange={e => setReceiptLookupInput(e.target.value)}
-                    className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold w-full sm:w-64"
-                  />
-                </div>
 
-                {matchedCustomerReceipts.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-4">No verified receipts match that search yet.</p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {matchedCustomerReceipts.map(rc => {
-                      const qtyVal = Math.max(1, Number(rc.qty || 1));
-                      const unitLabel = rc.unitLabel || (rc.division === 'Tunz Cars' ? (qtyVal === 1 ? 'Day' : 'Days') : 'Units');
-                      return (
-                        <div key={rc.id} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 flex items-center justify-between gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs font-extrabold text-[#162238]">{rc.id}</span>
-                              <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                                Verified • {rc.status}
-                              </span>
-                            </div>
-                            <div className="font-bold text-sm text-slate-900 mt-1">{rc.clientName}</div>
-                            <div className="text-xs text-slate-600">
-                              {rc.itemSummary} ({qtyVal} {unitLabel}) — <strong>{formatPGK(rc.totalAmount)}</strong>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setPreviewDoc(rc)}
-                            className="px-3 py-2 rounded-lg bg-[#162238] hover:bg-slate-800 text-white text-xs font-bold shrink-0 flex items-center gap-1"
-                          >
-                            <Printer className="w-3.5 h-3.5" /> View / Print
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
             </div>
           ) : publicTab === 'cars' ? (
             <div className="space-y-6">
@@ -2281,23 +2231,34 @@ function TunzAccessoriesSuite() {
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-extrabold text-[#162238]">Official Receipt Dispatch Portal</h3>
+                  <h3 className="text-lg font-extrabold text-[#162238] flex items-center gap-2">
+                    <Receipt className="w-5 h-5 text-emerald-700" /> Verified Official Receipts & Dispatch Portal
+                  </h3>
                   <p className="text-xs text-slate-500">
-                    Verified receipt amounts automatically count toward income revenue ({formatPGK(metrics.collected)} total).
+                    Private Admin Registry — Verified receipt amounts automatically count toward income revenue ({formatPGK(metrics.collected)} total).
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setDocModal({ open: true, data: { type: 'Official Receipt', status: 'Paid in Full' } })}
-                  className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" /> Generate Manual Receipt
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Search Receipt #, Client, or Ref..."
+                    value={receiptLookupInput}
+                    onChange={e => setReceiptLookupInput(e.target.value)}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold w-56"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setDocModal({ open: true, data: { type: 'Official Receipt', status: 'Paid in Full' } })}
+                    className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" /> Generate Manual Receipt
+                  </button>
+                </div>
               </div>
 
-              {officialReceipts.length === 0 ? (
+              {matchedCustomerReceipts.length === 0 ? (
                 <p className="text-sm text-slate-500 py-8 text-center">
-                  No verified receipts yet. Verify a payment under <strong>Payment Proofs</strong> or generate one above.
+                  No verified receipts match your search yet. Verify a payment under <strong>Payment Proofs</strong> or generate one above.
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -2313,7 +2274,7 @@ function TunzAccessoriesSuite() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {officialReceipts.map(rc => {
+                      {matchedCustomerReceipts.map(rc => {
                         const custPhoneDigits = toDigitsPhone(rc.clientContact);
                         const shareText = buildCustomerShareText(rc);
                         const { qtyVal, unitLabel } = getDocQtyAndLabel(rc);
