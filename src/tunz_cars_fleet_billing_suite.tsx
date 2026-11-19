@@ -993,39 +993,42 @@ function TunzAccessoriesSuite() {
     setExpModal(false);
   };
 
-  // Unified Receipt & Payment Income Engine:
-  // Any Official Receipt or Paid-in-Full document counts toward realized receipt income,
-  // plus any manual payment entry whose docId is not already an Official Receipt.
+  // Actual Realized Income Engine:
+  // Counts actual verified/logged payments in `payments`, plus any `Official Receipt` / `Paid in Full`
+  // document that has not already been logged as a payment in `payments` (avoiding duplicates/double-counts).
+  // Unpaid Quotations, unpaid Proforma Invoices, and unverified payment proofs are excluded from actuals.
   const receiptIncomeEntries = useMemo(() => {
-    const receiptDocs = documents.filter(d => d.type === 'Official Receipt' || d.status === 'Paid in Full');
-    const receiptDocIds = new Set(receiptDocs.map(d => d.id));
+    const paymentDocIds = new Set(payments.map(p => p.docId).filter(Boolean));
+    const docById = new Map(documents.map(d => [d.id, d]));
 
-    const fromReceipts = receiptDocs.map(d => {
-      const amt = Number(d.paidAmount || d.totalAmount || 0);
+    const actualPayments = payments.map(p => {
+      const linkedDoc = p.docId ? docById.get(p.docId) : null;
       return {
+        id: p.id,
+        docId: p.docId || '',
+        date: p.date || new Date().toISOString().slice(0, 10),
+        division: linkedDoc?.division || 'Group Ledger',
+        clientName: linkedDoc?.clientName || p.reference || 'Verified Payment',
+        itemSummary: linkedDoc?.itemSummary || p.method || 'Bank Transfer',
+        source: linkedDoc ? `Receipt (${linkedDoc.id})` : `Actual Payment (${p.id})`,
+        amount: Number(p.amount || 0)
+      };
+    });
+
+    const standaloneReceipts = documents
+      .filter(d => (d.type === 'Official Receipt' || d.status === 'Paid in Full') && !paymentDocIds.has(d.id))
+      .map(d => ({
         id: d.id,
+        docId: d.id,
         date: d.date || new Date().toISOString().slice(0, 10),
         division: d.division || 'Tunz Cars',
         clientName: d.clientName || 'Customer',
         itemSummary: d.itemSummary || d.id,
-        source: `Receipt (${d.id})`,
-        amount: amt
-      };
-    });
-
-    const extraPayments = payments
-      .filter(p => !p.docId || !receiptDocIds.has(p.docId))
-      .map(p => ({
-        id: p.id,
-        date: p.date || new Date().toISOString().slice(0, 10),
-        division: 'Group Ledger',
-        clientName: p.reference || 'Bank Payment',
-        itemSummary: p.method || 'Bank Transfer',
-        source: `Payment (${p.id})`,
-        amount: Number(p.amount || 0)
+        source: `Official Receipt (${d.id})`,
+        amount: Number(d.paidAmount || d.totalAmount || 0)
       }));
 
-    return [...fromReceipts, ...extraPayments];
+    return [...actualPayments, ...standaloneReceipts];
   }, [documents, payments]);
 
   const metrics = useMemo(() => {
@@ -1044,19 +1047,22 @@ function TunzAccessoriesSuite() {
     const grossIncome = weekIncome.reduce((s, r) => s + Number(r.amount || 0), 0);
     const totalExp = weekExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
     const gstIncluded = grossIncome - grossIncome / 1.1;
-    const netWeekly = grossIncome - totalExp;
-    const profitBase = Math.max(0, netWeekly);
+    const actualWeeklyProfit = grossIncome - totalExp;
+    const profitBase = Math.max(0, actualWeeklyProfit);
     const weeklyTithe10 = profitBase * 0.10;
     const srAbelCharity15 = profitBase * 0.15;
-    const retainedAfterTitheCharity = netWeekly - weeklyTithe10 - srAbelCharity15;
+    const retainedAfterTitheCharity = actualWeeklyProfit - weeklyTithe10 - srAbelCharity15;
     return {
       ...win,
       weekIncome,
       weekExpenses,
+      actualWeeklyRevenue: grossIncome,
+      actualWeeklyExpenses: totalExp,
       grossIncome,
       totalExp,
       gstIncluded,
-      netWeekly,
+      netWeekly: actualWeeklyProfit,
+      actualWeeklyProfit,
       profitBase,
       weeklyTithe10,
       srAbelCharity15,
@@ -2057,11 +2063,11 @@ function TunzAccessoriesSuite() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
-                      <p className="text-[11px] font-bold uppercase text-emerald-800">Weekly Receipt Income</p>
+                      <p className="text-[11px] font-bold uppercase text-emerald-800">Actual Weekly Revenue</p>
                       <p className="text-xl font-extrabold text-emerald-800 mt-1">{formatPGK(weeklyReport.grossIncome)}</p>
                     </div>
                     <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                      <p className="text-[11px] font-bold uppercase text-slate-600">Weekly Expenses</p>
+                      <p className="text-[11px] font-bold uppercase text-slate-600">Actual Weekly Expenses</p>
                       <p className="text-xl font-extrabold text-[#9E2A2B] mt-1">{formatPGK(weeklyReport.totalExp)}</p>
                     </div>
                     <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
@@ -2069,7 +2075,7 @@ function TunzAccessoriesSuite() {
                       <p className="text-xl font-extrabold text-[#162238] mt-1">{formatPGK(weeklyReport.gstIncluded)}</p>
                     </div>
                     <div className="p-4 rounded-xl bg-[#162238] text-white">
-                      <p className="text-[11px] font-bold uppercase text-[#E5C98B]">Weekly Net Profit</p>
+                      <p className="text-[11px] font-bold uppercase text-[#E5C98B]">Actual Weekly Profit</p>
                       <p className="text-xl font-extrabold mt-1">{formatPGK(weeklyReport.netWeekly)}</p>
                     </div>
                   </div>
@@ -2372,6 +2378,14 @@ function TunzAccessoriesSuite() {
                                   className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1"
                                 >
                                   <Copy className="w-3.5 h-3.5" /> Copy
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirm({ col: 'documents', id: rc.id, name: `${rc.id} (${rc.clientName})` })}
+                                  className="px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold inline-flex items-center gap-1"
+                                  title="Delete Receipt"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> Delete
                                 </button>
                               </div>
                             </td>
@@ -2977,7 +2991,17 @@ function TunzAccessoriesSuite() {
                   if (deleteConfirm.col === 'catalog') setCatalog(p => p.filter(x => x.id !== deleteConfirm.id));
                   if (deleteConfirm.col === 'inquiries') setInquiries(p => p.filter(x => x.id !== deleteConfirm.id));
                   if (deleteConfirm.col === 'payment_submissions') setPaymentSubmissions(p => p.filter(x => x.id !== deleteConfirm.id));
-                  if (deleteConfirm.col === 'documents') setDocuments(p => p.filter(x => x.id !== deleteConfirm.id));
+                  if (deleteConfirm.col === 'documents') {
+                    setDocuments(p => p.filter(x => x.id !== deleteConfirm.id));
+                    const linkedPays = payments.filter(pay => pay.docId === deleteConfirm.id);
+                    if (linkedPays.length > 0) {
+                      setPayments(p => p.filter(pay => pay.docId !== deleteConfirm.id));
+                      for (const lp of linkedPays) {
+                        await deleteCloud('payments', lp.id);
+                      }
+                    }
+                    if (receiptBanner?.id === deleteConfirm.id) setReceiptBanner(null);
+                  }
                   await deleteCloud(deleteConfirm.col, deleteConfirm.id);
                   setDeleteConfirm(null);
                 }}
