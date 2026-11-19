@@ -3,7 +3,7 @@ import {
   Car, Calendar, FileText, CreditCard, Fuel, Printer, Download,
   Lock, Unlock, Phone, Mail, MapPin, TrendingUp, X, Eye, Send,
   Sparkles, Package, Laptop, Upload, Copy, Navigation, ExternalLink,
-  Settings, ChevronLeft, ChevronRight, Camera, Edit2, Trash2, Plus, CheckCircle
+  Settings, ChevronLeft, ChevronRight, Camera, Edit2, Trash2, Plus, CheckCircle, Receipt
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -277,6 +277,8 @@ const compressImageFile = (file, maxW = 720, quality = 0.72) => new Promise((res
   reader.readAsDataURL(file);
 });
 
+const toDigitsPhone = (raw) => String(raw || '').replace(/[^0-9]/g, '');
+
 function ItemPhotoGallery({ images = [], alt = 'Photo', badge = null, onOpenLightbox = null }) {
   const validImages = Array.isArray(images) ? images.filter(Boolean) : [];
   const [idx, setIdx] = useState(0);
@@ -339,6 +341,7 @@ function TunzAccessoriesSuite() {
   const [pinError, setPinError] = useState('');
   const [copiedAcc, setCopiedAcc] = useState(false);
   const [settingsSavedBanner, setSettingsSavedBanner] = useState(false);
+  const [receiptBanner, setReceiptBanner] = useState(null);
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [vehicles, setVehicles] = useState(INITIAL_FLEET);
@@ -349,6 +352,9 @@ function TunzAccessoriesSuite() {
   const [payments, setPayments] = useState([]);
   const [paymentSubmissions, setPaymentSubmissions] = useState([]);
   const [expenses, setExpenses] = useState([]);
+
+  // Customer Receipt Lookup State
+  const [receiptLookupInput, setReceiptLookupInput] = useState('');
 
   const [adminTab, setAdminTab] = useState('overview');
   const [vehModal, setVehModal] = useState({ open: false, data: null });
@@ -467,6 +473,22 @@ function TunzAccessoriesSuite() {
     if (!s || !e) return 1;
     const diff = Math.ceil((new Date(e) - new Date(s)) / (1000 * 60 * 60 * 24)) + 1;
     return diff > 0 ? diff : 1;
+  };
+
+  const buildCustomerShareText = (docItem) => {
+    return [
+      `*${settings.companyName} — Official Receipt*`,
+      `Receipt #: ${docItem.id}`,
+      `Division: ${docItem.division}`,
+      `Client: ${docItem.clientName}`,
+      `Item / Service: ${docItem.itemSummary}`,
+      `Amount Paid (PGK): ${formatPGK(docItem.totalAmount)}`,
+      `Payment Ref: ${docItem.paymentRef || 'Verified'}`,
+      `Date: ${docItem.date}`,
+      `Bank Acc: ${settings.bankName} (${settings.accountNumber})`,
+      `TIN: ${settings.tinNumber} • IPA: ${settings.ipaNumber}`
+    ].join('
+');
   };
 
   const activeCarServices = useMemo(() => carServices.filter(s => s.active !== false), [carServices]);
@@ -665,16 +687,24 @@ function TunzAccessoriesSuite() {
     });
   };
 
+  // Auto-Generate Official Receipt & Prepare Instant Dispatch to Customer upon Verification
   const verifyPaymentSubmission = async (sub) => {
-    const updatedSub = { ...sub, status: 'Verified & Receipted' };
+    const receiptNum = `TA-RCT-2026-${String(documents.length + 1).padStart(3, '0')}`;
+    const updatedSub = { ...sub, status: 'Verified & Receipted', generatedReceiptId: receiptNum };
     setPaymentSubmissions(prev => prev.map(s => s.id === sub.id ? updatedSub : s));
     await saveCloud('payment_submissions', sub.id, updatedSub);
 
-    const matchedDoc = documents.find(d => d.id.toUpperCase() === (sub.bookingOrDocRef || '').toUpperCase());
+    const matchedDoc = documents.find(
+      d => d.id.toUpperCase() === (sub.bookingOrDocRef || '').toUpperCase()
+    );
+    const matchedInquiry = inquiries.find(
+      inq => inq.id.toUpperCase() === (sub.bookingOrDocRef || '').toUpperCase()
+    );
+
     const payId = `TA-PAY-${String(payments.length + 1).padStart(3, '0')}`;
     const payRec = {
       id: payId,
-      docId: matchedDoc ? matchedDoc.id : (sub.bookingOrDocRef || sub.id),
+      docId: matchedDoc ? matchedDoc.id : receiptNum,
       date: sub.paymentDate,
       amount: Number(sub.amountPaid || 0),
       method: sub.method,
@@ -684,19 +714,66 @@ function TunzAccessoriesSuite() {
     setPayments(prev => [payRec, ...prev]);
     await saveCloud('payments', payId, payRec);
 
+    let generatedReceiptObj = null;
+
     if (matchedDoc) {
       const newPaid = Number(matchedDoc.paidAmount || 0) + Number(sub.amountPaid || 0);
       const full = newPaid >= matchedDoc.totalAmount;
-      const updatedDoc = {
+      generatedReceiptObj = {
         ...matchedDoc,
         paidAmount: newPaid,
-        type: full ? 'Official Receipt' : matchedDoc.type,
-        status: full ? 'Paid in Full' : 'Part Paid'
+        type: 'Official Receipt',
+        status: full ? 'Paid in Full' : 'Part Paid',
+        clientContact: matchedDoc.clientContact || sub.phone,
+        paymentRef: sub.bankReference,
+        receiptSent: false
       };
-      setDocuments(prev => prev.map(d => d.id === matchedDoc.id ? updatedDoc : d));
-      await saveCloud('documents', matchedDoc.id, updatedDoc);
+      setDocuments(prev => prev.map(d => d.id === matchedDoc.id ? generatedReceiptObj : d));
+      await saveCloud('documents', matchedDoc.id, generatedReceiptObj);
+    } else {
+      generatedReceiptObj = {
+        id: receiptNum,
+        division: sub.division,
+        type: 'Official Receipt',
+        status: 'Paid in Full',
+        date: sub.paymentDate || new Date().toISOString().slice(0, 10),
+        clientName: matchedInquiry?.organization
+          ? `${matchedInquiry.organization} (${sub.payerName})`
+          : sub.payerName,
+        clientContact: sub.phone,
+        itemSummary: matchedInquiry?.itemSummary || `${sub.division} Payment (${sub.method})`,
+        startDate: matchedInquiry?.startDate || sub.paymentDate,
+        endDate: matchedInquiry?.endDate || sub.paymentDate,
+        qty: matchedInquiry?.qty || 1,
+        unitLabel: sub.division === 'Tunz Cars' ? 'Days/Trip' : 'Units',
+        unitRate: Number(sub.amountPaid || 0),
+        totalAmount: Number(sub.amountPaid || 0),
+        paidAmount: Number(sub.amountPaid || 0),
+        paymentRef: sub.bankReference,
+        receiptSent: false,
+        notes: `Verified Payment Ref: ${sub.bankReference} via ${sub.method}${sub.bookingOrDocRef ? ` • Booking/Ref: ${sub.bookingOrDocRef}` : ''}`
+      };
+      setDocuments(prev => [generatedReceiptObj, ...prev]);
+      await saveCloud('documents', receiptNum, generatedReceiptObj);
     }
-    setAdminTab('payments');
+
+    if (matchedInquiry) {
+      const updInq = { ...matchedInquiry, status: 'Approved & Invoiced', receiptId: generatedReceiptObj.id };
+      setInquiries(prev => prev.map(x => x.id === matchedInquiry.id ? updInq : x));
+      await saveCloud('inquiries', matchedInquiry.id, updInq);
+    }
+
+    setReceiptBanner(generatedReceiptObj);
+    setAdminTab('receipts');
+  };
+
+  const markReceiptSent = async (docItem) => {
+    const updated = { ...docItem, receiptSent: true, sentAt: new Date().toISOString().slice(0, 10) };
+    setDocuments(prev => prev.map(d => d.id === docItem.id ? updated : d));
+    await saveCloud('documents', docItem.id, updated);
+    if (receiptBanner?.id === docItem.id) {
+      setReceiptBanner(updated);
+    }
   };
 
   const handlePinUnlock = (e) => {
@@ -867,10 +944,27 @@ function TunzAccessoriesSuite() {
     return { collected, receivables: Math.max(0, billed - collected), gst, exp, net: collected - exp };
   }, [payments, documents, expenses]);
 
+  const officialReceipts = useMemo(
+    () => documents.filter(d => d.type === 'Official Receipt' || d.status === 'Paid in Full'),
+    [documents]
+  );
+
+  const matchedCustomerReceipts = useMemo(() => {
+    const q = receiptLookupInput.trim().toUpperCase();
+    if (!q) return officialReceipts;
+    return officialReceipts.filter(r =>
+      String(r.id || '').toUpperCase().includes(q) ||
+      String(r.clientName || '').toUpperCase().includes(q) ||
+      String(r.paymentRef || '').toUpperCase().includes(q) ||
+      String(r.notes || '').toUpperCase().includes(q)
+    );
+  }, [officialReceipts, receiptLookupInput]);
+
   const exportCSV = (filename, rows) => {
     if (!rows.length) return;
     const headers = Object.keys(rows[0]).filter(k => k !== 'receiptImage' && k !== 'images');
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('
+');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1028,8 +1122,8 @@ function TunzAccessoriesSuite() {
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase text-emerald-700">Customer Billing</div>
-                <div className="font-extrabold text-sm text-slate-900">Payment Portal</div>
-                <div className="text-[11px] text-slate-500">Pay & Upload Receipt</div>
+                <div className="font-extrabold text-sm text-slate-900">Payment & Receipts</div>
+                <div className="text-[11px] text-slate-500">Pay, Upload & Get Receipt</div>
               </div>
             </button>
           </div>
@@ -1101,172 +1195,221 @@ function TunzAccessoriesSuite() {
               </div>
             </div>
           ) : publicTab === 'pay' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="space-y-4">
-                <div className="bg-[#162238] text-white rounded-2xl p-6 shadow-md border-t-4 border-[#9A7B3E]">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#E5C98B]">Official Settlement Account</span>
-                  <h3 className="text-xl font-extrabold mt-1 mb-4">Bank Transfer Details</h3>
-                  <div className="space-y-3 text-sm bg-slate-900/60 p-4 rounded-xl border border-slate-700">
-                    <div>
-                      <p className="text-[11px] text-slate-400">Bank & Branch</p>
-                      <p className="font-bold">{settings.bankName}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">Account Name</p>
-                      <p className="font-bold">{settings.accountName}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">Account Number</p>
-                      <div className="flex items-center justify-between gap-2 mt-0.5">
-                        <span className="font-mono text-lg font-extrabold text-[#E5C98B]">{settings.accountNumber}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(settings.accountNumber);
-                            setCopiedAcc(true);
-                            setTimeout(() => setCopiedAcc(false), 2000);
-                          }}
-                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1"
-                        >
-                          <Copy className="w-3 h-3" /> {copiedAcc ? 'Copied!' : 'Copy'}
-                        </button>
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="space-y-4">
+                  <div className="bg-[#162238] text-white rounded-2xl p-6 shadow-md border-t-4 border-[#9A7B3E]">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#E5C98B]">Official Settlement Account</span>
+                    <h3 className="text-xl font-extrabold mt-1 mb-4">Bank Transfer Details</h3>
+                    <div className="space-y-3 text-sm bg-slate-900/60 p-4 rounded-xl border border-slate-700">
+                      <div>
+                        <p className="text-[11px] text-slate-400">Bank & Branch</p>
+                        <p className="font-bold">{settings.bankName}</p>
                       </div>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">IRC TIN / IPA Registration</p>
-                      <p className="text-xs font-mono">TIN: {settings.tinNumber} • IPA: {settings.ipaNumber}</p>
+                      <div>
+                        <p className="text-[11px] text-slate-400">Account Name</p>
+                        <p className="font-bold">{settings.accountName}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">Account Number</p>
+                        <div className="flex items-center justify-between gap-2 mt-0.5">
+                          <span className="font-mono text-lg font-extrabold text-[#E5C98B]">{settings.accountNumber}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(settings.accountNumber);
+                              setCopiedAcc(true);
+                              setTimeout(() => setCopiedAcc(false), 2000);
+                            }}
+                            className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1"
+                          >
+                            <Copy className="w-3 h-3" /> {copiedAcc ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">IRC TIN / IPA Registration</p>
+                        <p className="text-xs font-mono">TIN: {settings.tinNumber} • IPA: {settings.ipaNumber}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+                  <h3 className="text-xl font-extrabold text-[#162238] mb-1">Submit Payment Reference & Receipt Slip</h3>
+                  <p className="text-xs text-slate-500 mb-6">
+                    As soon as the Administrator verifies your payment, your Official GST Receipt is generated and ready to send or print below.
+                  </p>
+
+                  <form onSubmit={handleClientPaymentSubmit} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Subsidiary / Division *</label>
+                        <select
+                          value={clientPayForm.division}
+                          onChange={e => setClientPayForm({ ...clientPayForm, division: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                        >
+                          <option>Tunz Cars</option>
+                          <option>Tunz Organics</option>
+                          <option>Tech & Merch</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Booking ID or Invoice #</label>
+                        <input
+                          type="text"
+                          placeholder="e.g., TC-BK-2026-101 or TA-PI-2026-001"
+                          value={clientPayForm.bookingOrDocRef}
+                          onChange={e => setClientPayForm({ ...clientPayForm, bookingOrDocRef: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono uppercase"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Payer / Organization Name *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Full Name or Institution"
+                          value={clientPayForm.payerName}
+                          onChange={e => setClientPayForm({ ...clientPayForm, payerName: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Phone / WhatsApp Number *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="+675 7XXX XXXX"
+                          value={clientPayForm.phone}
+                          onChange={e => setClientPayForm({ ...clientPayForm, phone: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Amount Paid (PGK) *</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          placeholder="e.g., 500.00"
+                          value={clientPayForm.amountPaid}
+                          onChange={e => setClientPayForm({ ...clientPayForm, amountPaid: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Date *</label>
+                        <input
+                          type="date"
+                          required
+                          value={clientPayForm.paymentDate}
+                          onChange={e => setClientPayForm({ ...clientPayForm, paymentDate: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Method</label>
+                        <select
+                          value={clientPayForm.method}
+                          onChange={e => setClientPayForm({ ...clientPayForm, method: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                        >
+                          <option>BSP Mobile / Internet Banking</option>
+                          <option>BSP Branch Cash Deposit</option>
+                          <option>Interbank Transfer (Kina / Westpac / ANZ)</option>
+                          <option>Government / Hospital LPO</option>
+                          <option>Cash / EFTPOS at Pickup</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Bank Transaction Reference / Receipt Number *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Enter BSP Ref #, Receipt #, or LPO Number"
+                        value={clientPayForm.bankReference}
+                        onChange={e => setClientPayForm({ ...clientPayForm, bankReference: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Upload Screenshot or Photo of Payment Receipt (Optional)</label>
+                      <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-[#9A7B3E] rounded-xl p-5 cursor-pointer bg-slate-50/70 transition">
+                        <Upload className="w-6 h-6 text-[#9A7B3E] mb-1.5" />
+                        <span className="text-xs font-bold text-slate-700">
+                          {uploadingProof
+                            ? 'Compressing receipt image...'
+                            : clientPayForm.receiptFileName
+                            ? `Attached: ${clientPayForm.receiptFileName}`
+                            : 'Click to select screenshot or deposit slip photo (JPG/PNG)'}
+                        </span>
+                        <input type="file" accept="image/*" onChange={handleProofFileChange} className="hidden" />
+                      </label>
+                    </div>
+
+                    <button type="submit" disabled={uploadingProof} className="w-full py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow transition">
+                      Submit Payment Confirmation
+                    </button>
+                  </form>
+                </div>
               </div>
 
-              <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
-                <h3 className="text-xl font-extrabold text-[#162238] mb-1">Submit Payment Reference & Receipt Slip</h3>
-                <p className="text-xs text-slate-500 mb-6">
-                  Once verified by our accounts team, your Proforma Invoice automatically upgrades to an Official GST Tax Receipt.
-                </p>
-
-                <form onSubmit={handleClientPaymentSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Subsidiary / Division *</label>
-                      <select
-                        value={clientPayForm.division}
-                        onChange={e => setClientPayForm({ ...clientPayForm, division: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
-                      >
-                        <option>Tunz Cars</option>
-                        <option>Tunz Organics</option>
-                        <option>Tech & Merch</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Booking ID or Invoice #</label>
-                      <input
-                        type="text"
-                        placeholder="e.g., TC-BK-2026-101 or TA-PI-2026-001"
-                        value={clientPayForm.bookingOrDocRef}
-                        onChange={e => setClientPayForm({ ...clientPayForm, bookingOrDocRef: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono uppercase"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Payer / Organization Name *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Full Name or Institution"
-                        value={clientPayForm.payerName}
-                        onChange={e => setClientPayForm({ ...clientPayForm, payerName: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Phone / WhatsApp Number *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="+675 7XXX XXXX"
-                        value={clientPayForm.phone}
-                        onChange={e => setClientPayForm({ ...clientPayForm, phone: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Amount Paid (PGK) *</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        required
-                        placeholder="e.g., 500.00"
-                        value={clientPayForm.amountPaid}
-                        onChange={e => setClientPayForm({ ...clientPayForm, amountPaid: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Date *</label>
-                      <input
-                        type="date"
-                        required
-                        value={clientPayForm.paymentDate}
-                        onChange={e => setClientPayForm({ ...clientPayForm, paymentDate: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Method</label>
-                      <select
-                        value={clientPayForm.method}
-                        onChange={e => setClientPayForm({ ...clientPayForm, method: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
-                      >
-                        <option>BSP Mobile / Internet Banking</option>
-                        <option>BSP Branch Cash Deposit</option>
-                        <option>Interbank Transfer (Kina / Westpac / ANZ)</option>
-                        <option>Government / Hospital LPO</option>
-                        <option>Cash / EFTPOS at Pickup</option>
-                      </select>
-                    </div>
-                  </div>
-
+              {/* CUSTOMER VERIFIED RECEIPT LOOKUP & PRINT/SEND SECTION */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Bank Transaction Reference / Receipt Number *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Enter BSP Ref #, Receipt #, or LPO Number"
-                      value={clientPayForm.bankReference}
-                      onChange={e => setClientPayForm({ ...clientPayForm, bankReference: e.target.value })}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono"
-                    />
+                    <h4 className="text-lg font-extrabold text-[#162238] flex items-center gap-2">
+                      <Receipt className="w-5 h-5 text-emerald-700" /> Verified Official Receipts
+                    </h4>
+                    <p className="text-xs text-slate-500">Search by Receipt #, Client Name, or Payment Reference to view or print your verified receipt.</p>
                   </div>
+                  <input
+                    type="text"
+                    placeholder="Search Receipt # or Name..."
+                    value={receiptLookupInput}
+                    onChange={e => setReceiptLookupInput(e.target.value)}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold w-full sm:w-64"
+                  />
+                </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Upload Screenshot or Photo of Payment Receipt (Optional)</label>
-                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-[#9A7B3E] rounded-xl p-5 cursor-pointer bg-slate-50/70 transition">
-                      <Upload className="w-6 h-6 text-[#9A7B3E] mb-1.5" />
-                      <span className="text-xs font-bold text-slate-700">
-                        {uploadingProof
-                          ? 'Compressing receipt image...'
-                          : clientPayForm.receiptFileName
-                          ? `Attached: ${clientPayForm.receiptFileName}`
-                          : 'Click to select screenshot or deposit slip photo (JPG/PNG)'}
-                      </span>
-                      <input type="file" accept="image/*" onChange={handleProofFileChange} className="hidden" />
-                    </label>
+                {matchedCustomerReceipts.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-4">No verified receipts match that search yet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {matchedCustomerReceipts.map(rc => (
+                      <div key={rc.id} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-extrabold text-[#162238]">{rc.id}</span>
+                            <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                              Verified • {rc.status}
+                            </span>
+                          </div>
+                          <div className="font-bold text-sm text-slate-900 mt-1">{rc.clientName}</div>
+                          <div className="text-xs text-slate-600">{rc.itemSummary} — <strong>{formatPGK(rc.totalAmount)}</strong></div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc(rc)}
+                          className="px-3 py-2 rounded-lg bg-[#162238] hover:bg-slate-800 text-white text-xs font-bold shrink-0 flex items-center gap-1"
+                        >
+                          <Printer className="w-3.5 h-3.5" /> View / Print
+                        </button>
+                      </div>
+                    ))}
                   </div>
-
-                  <button type="submit" disabled={uploadingProof} className="w-full py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow transition">
-                    Submit Payment Confirmation
-                  </button>
-                </form>
+                )}
               </div>
             </div>
           ) : publicTab === 'cars' ? (
@@ -1572,6 +1715,7 @@ function TunzAccessoriesSuite() {
               { id: 'overview', label: 'Group Overview', icon: TrendingUp },
               { id: 'requests', label: `Client Requests (${pendingInquiriesCount})`, icon: Calendar },
               { id: 'proofs', label: `Payment Proofs (${pendingProofsCount})`, icon: Upload },
+              { id: 'receipts', label: `Receipt Portal (${officialReceipts.length})`, icon: Receipt },
               { id: 'cars', label: 'Tunz Cars Fleet & Services', icon: Car },
               { id: 'catalog', label: 'Organics & Tech Catalog', icon: Package },
               { id: 'billing', label: 'Quotes & Invoices', icon: FileText },
@@ -1593,6 +1737,44 @@ function TunzAccessoriesSuite() {
               );
             })}
           </div>
+
+          {/* Instant Receipt Generated Banner Right After Payment Verification */}
+          {receiptBanner && (
+            <div className="mb-6 bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <CheckCircle className="w-6 h-6 text-emerald-700 shrink-0" />
+                <div>
+                  <div className="text-xs font-extrabold uppercase text-emerald-800">
+                    Payment Verified — Official Receipt Generated ({receiptBanner.id})
+                  </div>
+                  <div className="text-sm font-bold text-slate-900">
+                    {receiptBanner.clientName} • {formatPGK(receiptBanner.totalAmount)} ({receiptBanner.division})
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewDoc(receiptBanner)}
+                  className="px-3 py-1.5 rounded-lg bg-[#162238] text-white text-xs font-bold inline-flex items-center gap-1"
+                >
+                  <Printer className="w-3.5 h-3.5" /> View / Print A4 Receipt
+                </button>
+                <a
+                  href={`https://wa.me/${toDigitsPhone(receiptBanner.clientContact) || waNumber}?text=${encodeURIComponent(buildCustomerShareText(receiptBanner))}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => markReceiptSent(receiptBanner)}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                >
+                  <Send className="w-3.5 h-3.5" /> Send via WhatsApp
+                </a>
+                <button type="button" onClick={() => setReceiptBanner(null)} className="p-1.5 rounded-lg bg-white text-slate-600">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {adminTab === 'overview' && (
             <div className="space-y-6">
@@ -1618,6 +1800,115 @@ function TunzAccessoriesSuite() {
                   <p className="text-xs text-slate-400 mt-1">Acc: {settings.accountNumber}</p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* DEDICATED RECEIPT PORTAL FOR GENERATING & SENDING RECEIPTS TO CUSTOMERS */}
+          {adminTab === 'receipts' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-extrabold text-[#162238]">Official Receipt Dispatch Portal</h3>
+                  <p className="text-xs text-slate-500">
+                    Receipts generated automatically from verified payments—send directly to customers via WhatsApp, Email, or print A4 copies.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDocModal({ open: true, data: { type: 'Official Receipt', status: 'Paid in Full' } })}
+                  className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" /> Generate Manual Receipt
+                </button>
+              </div>
+
+              {officialReceipts.length === 0 ? (
+                <p className="text-sm text-slate-500 py-8 text-center">
+                  No verified receipts yet. Verify a payment under <strong>Payment Proofs</strong> or generate one above.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                      <tr>
+                        <th className="p-3">Receipt # / Division</th>
+                        <th className="p-3">Customer & Contact</th>
+                        <th className="p-3">Item / Service</th>
+                        <th className="p-3">Amount Paid</th>
+                        <th className="p-3">Dispatch Status</th>
+                        <th className="p-3 text-right">Generate & Send</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {officialReceipts.map(rc => {
+                        const custPhoneDigits = toDigitsPhone(rc.clientContact);
+                        const shareText = buildCustomerShareText(rc);
+                        return (
+                          <tr key={rc.id}>
+                            <td className="p-3">
+                              <div className="font-mono text-xs font-bold">{rc.id}</div>
+                              <span className="text-[11px] font-bold text-[#9A7B3E]">{rc.division} • {rc.date}</span>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold">{rc.clientName}</div>
+                              <div className="text-xs text-slate-500">{rc.clientContact}</div>
+                            </td>
+                            <td className="p-3 text-xs">
+                              <div className="font-semibold">{rc.itemSummary}</div>
+                              <div className="text-slate-500">{rc.paymentRef ? `Ref: ${rc.paymentRef}` : rc.notes}</div>
+                            </td>
+                            <td className="p-3 font-extrabold text-emerald-700">{formatPGK(rc.totalAmount)}</td>
+                            <td className="p-3">
+                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                                rc.receiptSent ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {rc.receiptSent ? `Sent (${rc.sentAt || 'Done'})` : 'Ready to Send'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewDoc(rc)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-[#162238] hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1"
+                                >
+                                  <Printer className="w-3.5 h-3.5" /> A4 Receipt
+                                </button>
+                                <a
+                                  href={`https://wa.me/${custPhoneDigits || waNumber}?text=${encodeURIComponent(shareText)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={() => markReceiptSent(rc)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                                >
+                                  <Send className="w-3.5 h-3.5" /> WhatsApp
+                                </a>
+                                <a
+                                  href={`mailto:?subject=${encodeURIComponent(`Official Receipt ${rc.id} — ${settings.companyName}`)}&body=${encodeURIComponent(shareText)}`}
+                                  onClick={() => markReceiptSent(rc)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                                >
+                                  <Mail className="w-3.5 h-3.5" /> Email
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard?.writeText(shareText);
+                                    markReceiptSent(rc);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1"
+                                >
+                                  <Copy className="w-3.5 h-3.5" /> Copy
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
@@ -1729,7 +2020,7 @@ function TunzAccessoriesSuite() {
                             {sub.status === 'Pending Verification' && (
                               <>
                                 <button onClick={() => verifyPaymentSubmission(sub)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">
-                                  Verify
+                                  Verify & Generate Receipt
                                 </button>
                                 <button onClick={() => declinePaymentSubmission(sub)} className="px-2.5 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold">
                                   Decline
@@ -2150,7 +2441,7 @@ function TunzAccessoriesSuite() {
             <div className="flex justify-end gap-2">
               {proofViewer.status === 'Pending Verification' && (
                 <button onClick={() => { verifyPaymentSubmission(proofViewer); setProofViewer(null); }} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">
-                  Verify & Issue Receipt
+                  Verify & Generate Receipt
                 </button>
               )}
               <button onClick={() => setProofViewer(null)} className="px-4 py-2 rounded-lg bg-slate-100 text-xs font-bold">Close</button>
