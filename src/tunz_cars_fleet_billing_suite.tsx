@@ -4,7 +4,7 @@ import {
   Plus, Edit2, Trash2, CheckCircle, Clock, AlertTriangle, Printer,
   Download, Search, Lock, Unlock, Phone, Mail, MapPin, DollarSign,
   TrendingUp, Users, ArrowRight, X, Check, Building2, Eye, Send,
-  Sparkles, Package, Laptop, ShoppingBag, Layers, Briefcase, Upload, Image as ImageIcon, Copy, Navigation, ExternalLink, Settings, Sliders
+  Sparkles, Package, Laptop, ShoppingBag, Layers, Briefcase, Upload, Image as ImageIcon, Copy, Navigation, ExternalLink, Settings, ChevronLeft, ChevronRight, Camera
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -116,6 +116,7 @@ const INITIAL_FLEET = [
     nextServiceKm: 152000,
     regoExpiry: '2027-04-30',
     mvilExpiry: '2027-04-30',
+    images: [],
     highlights: 'All-Wheel Drive, High Ground Clearance, Cold A/C — Ideal for Kavieng & Boluminski Highway'
   },
   {
@@ -132,6 +133,7 @@ const INITIAL_FLEET = [
     nextServiceKm: 120000,
     regoExpiry: '2027-03-15',
     mvilExpiry: '2027-03-15',
+    images: [],
     highlights: 'Fuel-Efficient Executive Sedan, Smooth Ride — Ideal for Kavieng Town & Airport Transfers'
   },
   {
@@ -148,6 +150,7 @@ const INITIAL_FLEET = [
     nextServiceKm: 218000,
     regoExpiry: '2027-02-28',
     mvilExpiry: '2027-02-28',
+    images: [],
     highlights: 'Heavy-Duty 4x4, 7-Seater Capacity — Built for Rural Outreach & Rough Provincial Roads'
   }
 ];
@@ -193,8 +196,11 @@ const INITIAL_CATALOG = [
     name: 'Cold-Process Virgin Coconut Oil Soap (110g)',
     unit: 'Per Bar / 24-Bar Eco-Resort Box',
     unitPrice: 15,
+    salePrice: 0,
+    onSale: false,
     stock: 180,
     status: 'In Stock',
+    images: [],
     description: 'Handcrafted cold-process organic coconut oil soap formulated for eco-resorts, lodges, and retail.'
   },
   {
@@ -204,8 +210,11 @@ const INITIAL_CATALOG = [
     name: 'Eco-Resort Hospitality Amenity Pack (50 Bars)',
     unit: 'Wholesale Carton',
     unitPrice: 650,
+    salePrice: 0,
+    onSale: false,
     stock: 25,
     status: 'In Stock',
+    images: [],
     description: 'Custom-stamped organic coconut oil guest bars tailored for boutique resorts in New Ireland & PNG.'
   },
   {
@@ -215,8 +224,11 @@ const INITIAL_CATALOG = [
     name: 'Enterprise Refurbished Laptop Package (Dell Latitude / HP)',
     unit: 'Per Unit (Configured)',
     unitPrice: 2450,
+    salePrice: 0,
+    onSale: false,
     stock: 8,
     status: 'In Stock',
+    images: [],
     description: 'Business-grade Core i5/i7 laptops pre-configured with Office & institutional software for schools & offices.'
   },
   {
@@ -226,8 +238,11 @@ const INITIAL_CATALOG = [
     name: 'Custom Branded Corporate Polo & Event Apparel',
     unit: 'Minimum 20 Units (Per Shirt)',
     unitPrice: 65,
+    salePrice: 0,
+    onSale: false,
     stock: 250,
     status: 'Made to Order',
+    images: [],
     description: 'Custom embroidered and sublimated uniforms, event shirts, and promotional merchandise across PNG.'
   },
   {
@@ -237,8 +252,11 @@ const INITIAL_CATALOG = [
     name: 'Custom Graphic Design, Branding & IT Setup Service',
     unit: 'Per Project / Package',
     unitPrice: 350,
+    salePrice: 0,
+    onSale: false,
     stock: 99,
     status: 'Available',
+    images: [],
     description: 'Logo creation, institutional banner/poster design, Canvas/LMS setup, and laptop diagnostics.'
   }
 ];
@@ -285,7 +303,8 @@ const numberToWordsPGK = (amount) => {
   return `${words.trim()} Kina${toea > 0 ? ` and ${toea} Toea` : ''} Only`;
 };
 
-const compressImageFile = (file, maxW = 900) => new Promise((resolve, reject) => {
+// Smart compression so up to 6 gallery photos per vehicle/product fit comfortably inside Firestore's 1MB doc limit
+const compressImageFile = (file, maxW = 720, quality = 0.72) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = (ev) => {
     const img = new Image();
@@ -296,7 +315,8 @@ const compressImageFile = (file, maxW = 900) => new Promise((resolve, reject) =>
       canvas.height = img.height * scale;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/png', 0.85));
+      const isPng = file.type === 'image/png' && maxW <= 500;
+      resolve(isPng ? canvas.toDataURL('image/png', 0.85) : canvas.toDataURL('image/jpeg', quality));
     };
     img.onerror = reject;
     img.src = ev.target.result;
@@ -304,6 +324,79 @@ const compressImageFile = (file, maxW = 900) => new Promise((resolve, reject) =>
   reader.onerror = reject;
   reader.readAsDataURL(file);
 });
+
+// Interactive Multi-Photo Gallery Viewer for Fleet & Catalog Cards
+function ItemPhotoGallery({ images = [], alt = 'Photo', badge = null, onOpenLightbox = null }) {
+  const validImages = Array.isArray(images) ? images.filter(Boolean) : [];
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (idx >= validImages.length) setIdx(0);
+  }, [validImages.length, idx]);
+
+  if (validImages.length === 0) return null;
+
+  const prev = (e) => {
+    e.stopPropagation();
+    setIdx((idx - 1 + validImages.length) % validImages.length);
+  };
+  const next = (e) => {
+    e.stopPropagation();
+    setIdx((idx + 1) % validImages.length);
+  };
+
+  return (
+    <div className="relative w-full h-48 bg-slate-100 rounded-xl overflow-hidden mb-3.5 border border-slate-200 group">
+      <img
+        src={validImages[idx]}
+        alt={`${alt} (${idx + 1} of ${validImages.length})`}
+        onClick={(e) => {
+          if (onOpenLightbox) {
+            e.stopPropagation();
+            onOpenLightbox({ images: validImages, title: alt, startIndex: idx });
+          }
+        }}
+        className="w-full h-full object-cover transition duration-300 group-hover:scale-105 cursor-zoom-in"
+      />
+      {badge && (
+        <span className="absolute top-2.5 left-2.5 bg-[#9E2A2B] text-white text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-md shadow">
+          {badge}
+        </span>
+      )}
+      <span className="absolute top-2.5 right-2.5 bg-black/65 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+        <Camera className="w-3 h-3" /> {idx + 1} / {validImages.length}
+      </span>
+      {validImages.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={prev}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/90 hover:bg-white text-slate-900 flex items-center justify-center shadow"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={next}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/90 hover:bg-white text-slate-900 flex items-center justify-center shadow"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          <div className="absolute bottom-2 inset-x-0 flex justify-center gap-1.5">
+            {validImages.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setIdx(i); }}
+                className={`h-1.5 rounded-full transition-all ${i === idx ? 'w-5 bg-[#E5C98B]' : 'w-1.5 bg-white/75'}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function TunzAccessoriesSuite() {
   const [user, setUser] = useState(null);
@@ -335,6 +428,7 @@ function TunzAccessoriesSuite() {
   const [payModal, setPayModal] = useState(false);
   const [expModal, setExpModal] = useState(false);
   const [proofViewer, setProofViewer] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
 
   const [filterRegion, setFilterRegion] = useState('All');
   const [filterTown, setFilterTown] = useState('All');
@@ -527,7 +621,10 @@ function TunzAccessoriesSuite() {
     () => filteredCatalog.find(c => c.id === orderForm.itemId) || filteredCatalog[0],
     [filteredCatalog, orderForm.itemId]
   );
-  const orderTotal = (selectedProduct?.unitPrice || 0) * Number(orderForm.quantity || 1);
+  const effectiveProductPrice = (selectedProduct?.onSale && Number(selectedProduct?.salePrice) > 0)
+    ? Number(selectedProduct.salePrice)
+    : Number(selectedProduct?.unitPrice || 0);
+  const orderTotal = effectiveProductPrice * Number(orderForm.quantity || 1);
 
   const handleCarSubmit = async (e) => {
     e.preventDefault();
@@ -576,11 +673,11 @@ function TunzAccessoriesSuite() {
       clientName: orderForm.clientName,
       organization: orderForm.organization,
       phone: orderForm.phone,
-      itemSummary: `${selectedProduct.name}${selectedProduct.itemType ? ` [${selectedProduct.itemType}]` : ''}`,
+      itemSummary: `${selectedProduct.name}${selectedProduct.onSale ? ' [ON SALE]' : ''}${selectedProduct.itemType ? ` [${selectedProduct.itemType}]` : ''}`,
       startDate: new Date().toISOString().slice(0, 10),
       endDate: new Date().toISOString().slice(0, 10),
       qty: Number(orderForm.quantity || 1),
-      unitRate: selectedProduct.unitPrice,
+      unitRate: effectiveProductPrice,
       totalAmount: orderTotal,
       details: `Delivery: ${orderForm.deliveryLocation}${orderForm.notes ? ` • ${orderForm.notes}` : ''}`,
       status: 'Pending Approval',
@@ -596,7 +693,7 @@ function TunzAccessoriesSuite() {
     if (!file) return;
     setUploadingProof(true);
     try {
-      const compressed = await compressImageFile(file, 900);
+      const compressed = await compressImageFile(file, 850, 0.72);
       setClientPayForm(prev => ({
         ...prev,
         receiptImage: compressed,
@@ -752,7 +849,8 @@ function TunzAccessoriesSuite() {
       town: v.town || 'Kavieng',
       dailyRate: Number(v.dailyRate || 250),
       odometer: Number(v.odometer || 0),
-      nextServiceKm: Number(v.nextServiceKm || 5000)
+      nextServiceKm: Number(v.nextServiceKm || 5000),
+      images: Array.isArray(v.images) ? v.images : []
     };
     setVehicles(prev => isNew ? [...prev, rec] : prev.map(x => x.id === id ? rec : x));
     await saveCloud('vehicles', id, rec);
@@ -776,7 +874,10 @@ function TunzAccessoriesSuite() {
       id,
       itemType: item.itemType || 'Product',
       unitPrice: Number(item.unitPrice || 0),
-      stock: Number(item.stock || 0)
+      salePrice: Number(item.salePrice || 0),
+      onSale: Boolean(item.onSale && Number(item.salePrice) > 0),
+      stock: Number(item.stock || 0),
+      images: Array.isArray(item.images) ? item.images : []
     };
     setCatalog(prev => isNew ? [...prev, rec] : prev.map(x => x.id === id ? rec : x));
     await saveCloud('catalog', id, rec);
@@ -845,8 +946,9 @@ function TunzAccessoriesSuite() {
 
   const exportCSV = (filename, rows) => {
     if (!rows.length) return;
-    const headers = Object.keys(rows[0]).filter(k => k !== 'receiptImage');
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const headers = Object.keys(rows[0]).filter(k => k !== 'receiptImage' && k !== 'images');
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('
+');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1003,7 +1105,7 @@ function TunzAccessoriesSuite() {
               <div>
                 <div className="text-[10px] font-bold uppercase text-[#9E2A2B]">Division 03</div>
                 <div className="font-extrabold text-sm text-slate-900">Tech & Merch</div>
-                <div className="text-[11px] text-slate-500">Products & Services</div>
+                <div className="text-[11px] text-slate-500">Products, Services & Sale</div>
               </div>
             </button>
 
@@ -1302,7 +1404,7 @@ function TunzAccessoriesSuite() {
                   <div>
                     <span className="text-[11px] font-bold uppercase tracking-widest text-[#9A7B3E]">A Subsidiary of {settings.companyName}</span>
                     <h3 className="text-xl font-extrabold text-[#162238]">Tunz Cars — Fleet Hire & Transport Services</h3>
-                    <p className="text-xs text-slate-500">Filter by PNG Region & Town, select your service mode, and pin your exact location via Google Maps.</p>
+                    <p className="text-xs text-slate-500">Filter by PNG Region & Town, inspect multi-angle vehicle photos, and pin your exact location via Google Maps.</p>
                   </div>
                 </div>
               </div>
@@ -1382,6 +1484,11 @@ function TunzAccessoriesSuite() {
                                 isSelected ? 'border-[#9A7B3E] ring-2 ring-[#9A7B3E]/20 shadow-md' : isAvail ? 'border-slate-200 hover:border-slate-300' : 'border-slate-200 opacity-60 cursor-not-allowed'
                               }`}
                             >
+                              <ItemPhotoGallery
+                                images={v.images}
+                                alt={v.name}
+                                onOpenLightbox={setLightbox}
+                              />
                               <div className="flex justify-between items-start mb-2">
                                 <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">
                                   {v.town || 'Kavieng'} • {v.category}
@@ -1573,11 +1680,13 @@ function TunzAccessoriesSuite() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-4">
                 <h3 className="text-lg font-bold text-[#162238]">
-                  1. Select {publicTab === 'organics' ? 'Tunz Organics Products & Packages' : 'Tech & Merch Products and Services'}
+                  1. Select {publicTab === 'organics' ? 'Tunz Organics Products & Packages' : 'Tech & Merch Products, Services & Sale Items'}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredCatalog.map((item) => {
                     const isSelected = selectedProduct?.id === item.id;
+                    const hasSale = item.onSale && Number(item.salePrice) > 0;
+                    const displayPrice = hasSale ? Number(item.salePrice) : Number(item.unitPrice);
                     return (
                       <div
                         key={item.id}
@@ -1586,20 +1695,36 @@ function TunzAccessoriesSuite() {
                           isSelected ? 'border-[#9A7B3E] ring-2 ring-[#9A7B3E]/20 shadow-md' : 'border-slate-200 hover:border-slate-300'
                         }`}
                       >
+                        <ItemPhotoGallery
+                          images={item.images}
+                          alt={item.name}
+                          badge={hasSale ? 'ON SALE' : null}
+                          onOpenLightbox={setLightbox}
+                        />
                         <div className="flex justify-between items-start mb-2">
                           <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">
                             {item.division} • {item.itemType || 'Product'}
                           </span>
-                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                            {item.status} {item.itemType === 'Service' ? '' : `(${item.stock})`}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {hasSale && !(item.images && item.images.length > 0) && (
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-[#9E2A2B] text-white uppercase">
+                                ON SALE
+                              </span>
+                            )}
+                            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                              {item.status} {item.itemType === 'Service' ? '' : `(${item.stock})`}
+                            </span>
+                          </div>
                         </div>
                         <h4 className="text-base font-bold text-slate-900 mb-1">{item.name}</h4>
                         <p className="text-xs text-slate-500 mb-3">{item.unit}</p>
                         <p className="text-xs text-slate-600 mb-4">{item.description}</p>
                         <div className="pt-3 border-t border-slate-100 flex items-baseline justify-between">
                           <div>
-                            <span className="text-xl font-extrabold text-[#162238]">{formatPGK(item.unitPrice)}</span>
+                            <span className="text-xl font-extrabold text-[#162238]">{formatPGK(displayPrice)}</span>
+                            {hasSale && (
+                              <span className="text-xs text-slate-400 line-through ml-2">{formatPGK(item.unitPrice)}</span>
+                            )}
                             <span className="text-xs text-slate-500"> / unit (GST Incl.)</span>
                           </div>
                           {isSelected && <span className="text-xs font-bold text-[#9A7B3E]">Selected ✓</span>}
@@ -1729,23 +1854,25 @@ function TunzAccessoriesSuite() {
                   </div>
                   <div className="space-y-2.5">
                     {vehicles.map(v => (
-                      <div key={v.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50/60">
-                        <div>
-                          <div className="font-bold text-sm">{v.name} <span className="text-xs font-mono text-slate-500">({v.plate})</span></div>
-                          <div className="text-xs text-slate-500">
-                            <span className="font-semibold text-[#9A7B3E]">{v.town || 'Kavieng'} ({v.region || 'NGI'})</span> • {formatPGK(v.dailyRate)}/day
+                      <div key={v.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50/60 gap-3">
+                        <div className="flex items-center gap-3">
+                          {Array.isArray(v.images) && v.images[0] ? (
+                            <img src={v.images[0]} alt={v.name} className="w-12 h-10 rounded object-cover border shrink-0" />
+                          ) : (
+                            <div className="w-12 h-10 rounded bg-slate-200 text-slate-400 flex items-center justify-center shrink-0"><Car className="w-4 h-4" /></div>
+                          )}
+                          <div>
+                            <div className="font-bold text-sm">
+                              {v.name} <span className="text-xs font-mono text-slate-500">({v.plate})</span>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              <span className="font-semibold text-[#9A7B3E]">{v.town || 'Kavieng'}</span> • {formatPGK(v.dailyRate)}/day • {(v.images || []).length} photo(s)
+                            </div>
                           </div>
                         </div>
-                        <select
-                          value={v.status}
-                          onChange={(e) => saveVehicle({ ...v, status: e.target.value })}
-                          className="text-xs font-bold border border-slate-300 rounded px-2 py-1 bg-white"
-                        >
-                          <option>Available</option>
-                          <option>On Hire</option>
-                          <option>Maintenance</option>
-                          <option>Inactive</option>
-                        </select>
+                        <button onClick={() => setVehModal({ open: true, data: v })} className="px-2.5 py-1 rounded bg-white border border-slate-300 text-xs font-bold shrink-0">
+                          Edit / Photos
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1766,14 +1893,23 @@ function TunzAccessoriesSuite() {
                   </div>
                   <div className="space-y-2.5">
                     {catalog.map(c => (
-                      <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50/60">
-                        <div>
-                          <span className="text-[10px] font-bold uppercase text-[#9A7B3E]">{c.division} • {c.itemType || 'Product'}</span>
-                          <div className="font-bold text-sm">{c.name}</div>
-                          <div className="text-xs text-slate-500">{formatPGK(c.unitPrice)} • {c.itemType === 'Service' ? c.status : `Stock: ${c.stock}`}</div>
+                      <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50/60 gap-3">
+                        <div className="flex items-center gap-3">
+                          {Array.isArray(c.images) && c.images[0] ? (
+                            <img src={c.images[0]} alt={c.name} className="w-12 h-10 rounded object-cover border shrink-0" />
+                          ) : (
+                            <div className="w-12 h-10 rounded bg-slate-200 text-slate-400 flex items-center justify-center shrink-0"><Package className="w-4 h-4" /></div>
+                          )}
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-[#9A7B3E]">{c.division} • {c.itemType || 'Product'}</span>
+                            <div className="font-bold text-sm">{c.name}</div>
+                            <div className="text-xs text-slate-500">
+                              {formatPGK(c.onSale && c.salePrice > 0 ? c.salePrice : c.unitPrice)} • {(c.images || []).length} photo(s)
+                            </div>
+                          </div>
                         </div>
-                        <button onClick={() => setCatModal({ open: true, data: c })} className="px-2.5 py-1 rounded bg-white border border-slate-300 text-xs font-bold">
-                          Edit
+                        <button onClick={() => setCatModal({ open: true, data: c })} className="px-2.5 py-1 rounded bg-white border border-slate-300 text-xs font-bold shrink-0">
+                          Edit / Photos
                         </button>
                       </div>
                     ))}
@@ -1959,8 +2095,8 @@ function TunzAccessoriesSuite() {
                   <div className="flex items-center gap-3">
                     <img src={settings.tcLogoUrl || DEFAULT_TC_LOGO} alt="Tunz Cars" className="w-11 h-11 rounded-lg object-contain border" />
                     <div>
-                      <h3 className="font-bold text-slate-900">Tunz Cars — PNG Fleet Registry, Regions & Rates</h3>
-                      <p className="text-xs text-slate-500">Assign vehicles across NGI, Southern, Momase & Highlands towns and adjust daily PGK rates.</p>
+                      <h3 className="font-bold text-slate-900">Tunz Cars — PNG Fleet Registry, Photos, Regions & Rates</h3>
+                      <p className="text-xs text-slate-500">Upload multiple vehicle photos (exterior, interior, dash), assign PNG region/town, and adjust daily rates.</p>
                     </div>
                   </div>
                   <button onClick={() => setVehModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
@@ -1971,36 +2107,52 @@ function TunzAccessoriesSuite() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 text-xs uppercase text-slate-600">
                       <tr>
+                        <th className="p-3">Photos</th>
                         <th className="p-3">ID / Plate</th>
                         <th className="p-3">Vehicle</th>
                         <th className="p-3">PNG Region & Town</th>
                         <th className="p-3">Daily Rate</th>
-                        <th className="p-3">Odometer / Service</th>
                         <th className="p-3">Status</th>
                         <th className="p-3 text-right">Controls</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {vehicles.map(v => (
-                        <tr key={v.id}>
-                          <td className="p-3 font-mono text-xs font-bold">{v.id} ({v.plate})</td>
-                          <td className="p-3">
-                            <div className="font-bold">{v.name}</div>
-                            <div className="text-xs text-slate-500">{v.seats}</div>
-                          </td>
-                          <td className="p-3 text-xs">
-                            <div className="font-bold text-[#9A7B3E]">{v.town || 'Kavieng'}</div>
-                            <div className="text-slate-500">{v.region || 'New Guinea Islands (NGI)'}</div>
-                          </td>
-                          <td className="p-3 font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</td>
-                          <td className="p-3 text-xs">{Number(v.odometer).toLocaleString()} / {Number(v.nextServiceKm).toLocaleString()} km</td>
-                          <td className="p-3"><span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100">{v.status}</span></td>
-                          <td className="p-3 text-right space-x-2">
-                            <button onClick={() => setVehModal({ open: true, data: v })} className="p-1.5 rounded bg-blue-50 text-blue-700"><Edit2 className="w-4 h-4" /></button>
-                            <button onClick={() => setDeleteConfirm({ col: 'vehicles', id: v.id, name: v.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
-                          </td>
-                        </tr>
-                      ))}
+                      {vehicles.map(v => {
+                        const imgs = Array.isArray(v.images) ? v.images : [];
+                        return (
+                          <tr key={v.id}>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1.5">
+                                {imgs[0] ? (
+                                  <img src={imgs[0]} alt={v.name} className="w-12 h-10 rounded object-cover border" />
+                                ) : (
+                                  <div className="w-12 h-10 rounded bg-slate-100 border flex items-center justify-center text-slate-400"><Camera className="w-4 h-4" /></div>
+                                )}
+                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${imgs.length >= 3 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                  {imgs.length} photo(s)
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3 font-mono text-xs font-bold">{v.id} ({v.plate})</td>
+                            <td className="p-3">
+                              <div className="font-bold">{v.name}</div>
+                              <div className="text-xs text-slate-500">{v.seats}</div>
+                            </td>
+                            <td className="p-3 text-xs">
+                              <div className="font-bold text-[#9A7B3E]">{v.town || 'Kavieng'}</div>
+                              <div className="text-slate-500">{v.region || 'New Guinea Islands (NGI)'}</div>
+                            </td>
+                            <td className="p-3 font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</td>
+                            <td className="p-3"><span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100">{v.status}</span></td>
+                            <td className="p-3 text-right space-x-2">
+                              <button onClick={() => setVehModal({ open: true, data: v })} className="px-2.5 py-1.5 rounded bg-blue-50 text-blue-700 text-xs font-bold inline-flex items-center gap-1">
+                                <Edit2 className="w-3.5 h-3.5" /> Edit / Photos
+                              </button>
+                              <button onClick={() => setDeleteConfirm({ col: 'vehicles', id: v.id, name: v.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -2058,8 +2210,8 @@ function TunzAccessoriesSuite() {
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch — Products & Services Manager</h3>
-                  <p className="text-xs text-slate-500">Add, edit, or delete physical products and services under Tunz Organics or Tech & Merch.</p>
+                  <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch — Products, Services, Photos & Sale Pricing</h3>
+                  <p className="text-xs text-slate-500">Upload multiple product photos, mark items ON SALE with discounted PGK prices, and manage stock.</p>
                 </div>
                 <button onClick={() => setCatModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold flex items-center gap-1.5">
                   <Plus className="w-4 h-4" /> Add Product or Service
@@ -2069,40 +2221,61 @@ function TunzAccessoriesSuite() {
                 <table className="w-full text-left text-sm">
                   <thead className="bg-slate-100 text-xs uppercase text-slate-600">
                     <tr>
+                      <th className="p-3">Photos</th>
                       <th className="p-3">SKU / Division</th>
-                      <th className="p-3">Type</th>
                       <th className="p-3">Product / Service Name</th>
-                      <th className="p-3">Unit Price (PGK)</th>
+                      <th className="p-3">Price / Sale</th>
                       <th className="p-3">Stock / Status</th>
                       <th className="p-3 text-right">Controls</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {catalog.map(c => (
-                      <tr key={c.id}>
-                        <td className="p-3">
-                          <div className="font-mono text-xs font-bold">{c.id}</div>
-                          <span className="text-[11px] font-bold text-[#9A7B3E]">{c.division}</span>
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                            c.itemType === 'Service' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {c.itemType || 'Product'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <div className="font-bold">{c.name}</div>
-                          <div className="text-xs text-slate-500">{c.unit}</div>
-                        </td>
-                        <td className="p-3 font-extrabold">{formatPGK(c.unitPrice)}</td>
-                        <td className="p-3 text-xs font-bold">{c.itemType === 'Service' ? c.status : `${c.stock} (${c.status})`}</td>
-                        <td className="p-3 text-right space-x-2">
-                          <button onClick={() => setCatModal({ open: true, data: c })} className="p-1.5 rounded bg-blue-50 text-blue-700"><Edit2 className="w-4 h-4" /></button>
-                          <button onClick={() => setDeleteConfirm({ col: 'catalog', id: c.id, name: c.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
-                        </td>
-                      </tr>
-                    ))}
+                    {catalog.map(c => {
+                      const imgs = Array.isArray(c.images) ? c.images : [];
+                      const hasSale = c.onSale && Number(c.salePrice) > 0;
+                      return (
+                        <tr key={c.id}>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5">
+                              {imgs[0] ? (
+                                <img src={imgs[0]} alt={c.name} className="w-12 h-10 rounded object-cover border" />
+                              ) : (
+                                <div className="w-12 h-10 rounded bg-slate-100 border flex items-center justify-center text-slate-400"><Camera className="w-4 h-4" /></div>
+                              )}
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                {imgs.length} photo(s)
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="font-mono text-xs font-bold">{c.id}</div>
+                            <span className="text-[11px] font-bold text-[#9A7B3E]">{c.division} • {c.itemType || 'Product'}</span>
+                          </td>
+                          <td className="p-3">
+                            <div className="font-bold">{c.name}</div>
+                            <div className="text-xs text-slate-500">{c.unit}</div>
+                          </td>
+                          <td className="p-3">
+                            {hasSale ? (
+                              <div>
+                                <span className="font-extrabold text-[#9E2A2B]">{formatPGK(c.salePrice)}</span>
+                                <span className="text-[10px] font-bold uppercase bg-[#9E2A2B] text-white px-1.5 py-0.5 rounded ml-1.5">SALE</span>
+                                <div className="text-xs text-slate-400 line-through">{formatPGK(c.unitPrice)}</div>
+                              </div>
+                            ) : (
+                              <span className="font-extrabold">{formatPGK(c.unitPrice)}</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-xs font-bold">{c.itemType === 'Service' ? c.status : `${c.stock} (${c.status})`}</td>
+                          <td className="p-3 text-right space-x-2">
+                            <button onClick={() => setCatModal({ open: true, data: c })} className="px-2.5 py-1.5 rounded bg-blue-50 text-blue-700 text-xs font-bold inline-flex items-center gap-1">
+                              <Edit2 className="w-3.5 h-3.5" /> Edit / Photos
+                            </button>
+                            <button onClick={() => setDeleteConfirm({ col: 'catalog', id: c.id, name: c.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2406,7 +2579,7 @@ function TunzAccessoriesSuite() {
                             onChange={async (e) => {
                               const file = e.target.files?.[0];
                               if (!file) return;
-                              const dataUrl = await compressImageFile(file, 500);
+                              const dataUrl = await compressImageFile(file, 450, 0.85);
                               setSettings(prev => ({ ...prev, taLogoUrl: dataUrl }));
                             }}
                           />
@@ -2427,7 +2600,7 @@ function TunzAccessoriesSuite() {
                             onChange={async (e) => {
                               const file = e.target.files?.[0];
                               if (!file) return;
-                              const dataUrl = await compressImageFile(file, 500);
+                              const dataUrl = await compressImageFile(file, 450, 0.85);
                               setSettings(prev => ({ ...prev, tcLogoUrl: dataUrl }));
                             }}
                           />
@@ -2447,6 +2620,15 @@ function TunzAccessoriesSuite() {
             </div>
           )}
         </main>
+      )}
+
+      {lightbox && (
+        <LightboxModal
+          images={lightbox.images}
+          title={lightbox.title}
+          startIndex={lightbox.startIndex}
+          onClose={() => setLightbox(null)}
+        />
       )}
 
       {proofViewer && (
@@ -2482,7 +2664,7 @@ function TunzAccessoriesSuite() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <form onSubmit={handlePinUnlock} className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
             <h3 className="text-lg font-bold text-[#162238] mb-1">{settings.companyName} Owner Login</h3>
-            <p className="text-xs text-slate-500 mb-4">Enter Owner PIN to manage all divisions & settings.</p>
+            <p className="text-xs text-slate-500 mb-4">Enter Owner PIN to manage all divisions, photos & settings.</p>
             <input
               type="password"
               autoFocus
@@ -2656,38 +2838,198 @@ function TunzAccessoriesSuite() {
   );
 }
 
+function LightboxModal({ images = [], title = '', startIndex = 0, onClose }) {
+  const [idx, setIdx] = useState(startIndex);
+  if (!images.length) return null;
+  return (
+    <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-4 max-w-3xl w-full shadow-2xl space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="font-bold text-slate-900">{title}</h3>
+            <p className="text-xs text-slate-500">Photo {idx + 1} of {images.length}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="relative bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center h-[55vh]">
+          <img src={images[idx]} alt={title} className="max-h-full max-w-full object-contain" />
+          {images.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setIdx((idx - 1 + images.length) % images.length)}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-900 flex items-center justify-center shadow"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIdx((idx + 1) % images.length)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-900 flex items-center justify-center shadow"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        </div>
+        {images.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {images.map((src, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setIdx(i)}
+                className={`w-16 h-12 rounded-lg overflow-hidden border-2 shrink-0 ${i === idx ? 'border-[#9A7B3E]' : 'border-transparent opacity-60'}`}
+              >
+                <img src={src} alt="" className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Reusable Multi-Photo Uploader Widget for Vehicles & Products
+function MultiPhotoUploader({ images = [], onChange, minRecommended = 0, label = 'Photos' }) {
+  const [processing, setProcessing] = useState(false);
+
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setProcessing(true);
+    try {
+      const remainingSlots = Math.max(0, 6 - images.length);
+      const batch = files.slice(0, remainingSlots);
+      const compressedList = await Promise.all(batch.map(f => compressImageFile(f, 720, 0.72)));
+      onChange([...images, ...compressedList]);
+    } catch (err) {
+      console.error('Photo upload error:', err);
+    } finally {
+      setProcessing(false);
+      e.target.value = '';
+    }
+  };
+
+  const removeAt = (index) => {
+    onChange(images.filter((_, i) => i !== index));
+  };
+
+  const makeCover = (index) => {
+    if (index === 0) return;
+    const copy = [...images];
+    const [picked] = copy.splice(index, 1);
+    copy.unshift(picked);
+    onChange(copy);
+  };
+
+  return (
+    <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-bold text-[#162238] flex items-center gap-1.5">
+          <Camera className="w-3.5 h-3.5 text-[#9A7B3E]" /> {label} ({images.length} / 6 uploaded)
+        </label>
+        {minRecommended > 0 && (
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+            images.length >= minRecommended ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+          }`}>
+            {images.length >= minRecommended ? `${images.length} Photos Ready ✓` : `Recommended: at least ${minRecommended} photos`}
+          </span>
+        )}
+      </div>
+
+      {images.length > 0 && (
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {images.map((src, idx) => (
+            <div key={idx} className="relative group rounded-lg overflow-hidden border border-slate-300 bg-white aspect-square">
+              <img src={src} alt={`Upload ${idx + 1}`} className="w-full h-full object-cover" />
+              {idx === 0 && (
+                <span className="absolute bottom-0 inset-x-0 bg-[#162238]/85 text-[#E5C98B] text-[9px] font-bold text-center py-0.5">
+                  Cover
+                </span>
+              )}
+              <div className="absolute top-1 right-1 flex gap-1">
+                {idx > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => makeCover(idx)}
+                    title="Set as Cover Photo"
+                    className="w-5 h-5 rounded bg-white/90 text-[#162238] text-[10px] font-bold flex items-center justify-center shadow"
+                  >
+                    ★
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeAt(idx)}
+                  title="Remove Photo"
+                  className="w-5 h-5 rounded bg-red-600 text-white flex items-center justify-center shadow"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {images.length < 6 && (
+        <label className="flex items-center justify-center gap-2 border-2 border-dashed border-slate-300 hover:border-[#9A7B3E] rounded-lg p-2.5 cursor-pointer bg-white transition">
+          <Upload className="w-4 h-4 text-[#9A7B3E]" />
+          <span className="text-xs font-bold text-slate-700">
+            {processing ? 'Compressing & attaching photos...' : 'Select Photos (Front, Side, Interior — up to 6 images)'}
+          </span>
+          <input type="file" accept="image/*" multiple onChange={handleFiles} className="hidden" />
+        </label>
+      )}
+    </div>
+  );
+}
+
 function VehicleModal({ initial, onClose, onSave }) {
   const defaultRegion = initial?.region || 'New Guinea Islands (NGI)';
   const [form, setForm] = useState(
-    initial || {
-      name: '',
-      plate: '',
-      category: 'SUV / AWD',
-      seats: '5 Seats • Auto',
-      region: 'New Guinea Islands (NGI)',
-      town: 'Kavieng',
-      dailyRate: 250,
-      status: 'Available',
-      odometer: 0,
-      nextServiceKm: 5000,
-      highlights: ''
-    }
+    initial
+      ? { ...initial, images: Array.isArray(initial.images) ? initial.images : [] }
+      : {
+          name: '',
+          plate: '',
+          category: 'SUV / AWD',
+          seats: '5 Seats • Auto',
+          region: 'New Guinea Islands (NGI)',
+          town: 'Kavieng',
+          dailyRate: 250,
+          status: 'Available',
+          odometer: 0,
+          nextServiceKm: 5000,
+          images: [],
+          highlights: ''
+        }
   );
 
   const townsForSelectedRegion = PNG_REGIONS_AND_TOWNS[form.region] || PNG_REGIONS_AND_TOWNS[defaultRegion];
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl">
-        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Fleet Vehicle & Location' : 'Add Fleet Vehicle & Location'}</h3>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-xl w-full space-y-3 shadow-xl my-8">
+        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Fleet Vehicle, Photos & Location' : 'Add Fleet Vehicle, Photos & Location'}</h3>
+
+        <MultiPhotoUploader
+          images={form.images}
+          onChange={(imgs) => setForm({ ...form, images: imgs })}
+          minRecommended={3}
+          label="Vehicle Photos (Exterior, Interior, Rear)"
+        />
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Vehicle Name *</label>
-            <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="2016 Toyota Hilux" className="w-full border rounded-lg px-3 py-2 text-sm" />
+            <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="2013 Subaru XV AWD" className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="block text-xs font-semibold mb-1">Plate # *</label>
-            <input required value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} placeholder="KVG-999" className="w-full border rounded-lg px-3 py-2 text-sm" />
+            <input required value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} placeholder="KVG-412" className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
         </div>
 
@@ -2747,7 +3089,7 @@ function VehicleModal({ initial, onClose, onSave }) {
         </div>
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
-          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold">Save Vehicle</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold">Save Vehicle & Photos</button>
         </div>
       </form>
     </div>
@@ -2814,21 +3156,34 @@ function CarServiceModal({ initial, onClose, onSave }) {
 
 function CatalogModal({ initial, onClose, onSave }) {
   const [form, setForm] = useState(
-    initial || {
-      division: 'Tech & Merch',
-      itemType: 'Product',
-      name: '',
-      unit: 'Per Unit',
-      unitPrice: 100,
-      stock: 20,
-      status: 'In Stock',
-      description: ''
-    }
+    initial
+      ? { ...initial, images: Array.isArray(initial.images) ? initial.images : [], salePrice: initial.salePrice || 0, onSale: Boolean(initial.onSale) }
+      : {
+          division: 'Tech & Merch',
+          itemType: 'Product',
+          name: '',
+          unit: 'Per Unit',
+          unitPrice: 100,
+          salePrice: 0,
+          onSale: false,
+          stock: 20,
+          status: 'In Stock',
+          images: [],
+          description: ''
+        }
   );
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl">
-        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Product / Service' : 'Add Product or Service'}</h3>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-xl w-full space-y-3 shadow-xl my-8">
+        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Product / Service & Photos' : 'Add Product, Service or Sale Item'}</h3>
+
+        <MultiPhotoUploader
+          images={form.images}
+          onChange={(imgs) => setForm({ ...form, images: imgs })}
+          minRecommended={1}
+          label="Product / Merch / Organic Photos"
+        />
+
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Division</label>
@@ -2845,18 +3200,42 @@ function CatalogModal({ initial, onClose, onSave }) {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold mb-1">Unit Price (PGK)</label>
+            <label className="block text-xs font-semibold mb-1">Regular Price (PGK) *</label>
             <input type="number" required value={form.unitPrice} onChange={e => setForm({ ...form, unitPrice: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
           </div>
         </div>
+
+        <div className="bg-amber-50/80 border border-amber-200 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-xs font-bold text-[#9E2A2B] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.onSale}
+              onChange={e => setForm({ ...form, onSale: e.target.checked })}
+            />
+            Mark Item ON SALE (Promotional Price)
+          </label>
+          {form.onSale && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-700">Sale Price (PGK):</span>
+              <input
+                type="number"
+                required={form.onSale}
+                value={form.salePrice}
+                onChange={e => setForm({ ...form, salePrice: e.target.value })}
+                className="w-28 border border-amber-400 rounded-lg px-2.5 py-1 text-sm font-extrabold text-[#9E2A2B] bg-white"
+              />
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="block text-xs font-semibold mb-1">Product or Service Name *</label>
-          <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g., Custom Branded Caps / Laptop Repair" className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g., Custom Branded Caps / Virgin Coconut Soap" className="w-full border rounded-lg px-3 py-2 text-sm" />
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Unit Label</label>
-            <input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} placeholder="Per Unit / Per Job" className="w-full border rounded-lg px-3 py-2 text-sm" />
+            <input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} placeholder="Per Unit / Per Box" className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="block text-xs font-semibold mb-1">Stock Qty</label>
@@ -2878,7 +3257,7 @@ function CatalogModal({ initial, onClose, onSave }) {
         </div>
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
-          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold">Save Item</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold">Save Item & Photos</button>
         </div>
       </form>
     </div>
