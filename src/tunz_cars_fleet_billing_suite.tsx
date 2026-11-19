@@ -1044,6 +1044,11 @@ function TunzAccessoriesSuite() {
     const grossIncome = weekIncome.reduce((s, r) => s + Number(r.amount || 0), 0);
     const totalExp = weekExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
     const gstIncluded = grossIncome - grossIncome / 1.1;
+    const netWeekly = grossIncome - totalExp;
+    const profitBase = Math.max(0, netWeekly);
+    const weeklyTithe10 = profitBase * 0.10;
+    const srAbelCharity15 = profitBase * 0.15;
+    const retainedAfterTitheCharity = netWeekly - weeklyTithe10 - srAbelCharity15;
     return {
       ...win,
       weekIncome,
@@ -1051,7 +1056,11 @@ function TunzAccessoriesSuite() {
       grossIncome,
       totalExp,
       gstIncluded,
-      netWeekly: grossIncome - totalExp
+      netWeekly,
+      profitBase,
+      weeklyTithe10,
+      srAbelCharity15,
+      retainedAfterTitheCharity
     };
   }, [reportWeekDate, receiptIncomeEntries, expenses]);
 
@@ -2046,22 +2055,48 @@ function TunzAccessoriesSuite() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
                       <p className="text-[11px] font-bold uppercase text-emerald-800">Weekly Receipt Income</p>
                       <p className="text-xl font-extrabold text-emerald-800 mt-1">{formatPGK(weeklyReport.grossIncome)}</p>
                     </div>
                     <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <p className="text-[11px] font-bold uppercase text-slate-600">Weekly Expenses</p>
+                      <p className="text-xl font-extrabold text-[#9E2A2B] mt-1">{formatPGK(weeklyReport.totalExp)}</p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                       <p className="text-[11px] font-bold uppercase text-slate-600">10% PNG GST Portion</p>
                       <p className="text-xl font-extrabold text-[#162238] mt-1">{formatPGK(weeklyReport.gstIncluded)}</p>
                     </div>
-                    <div className="p-4 rounded-xl bg-red-50 border border-red-200">
-                      <p className="text-[11px] font-bold uppercase text-[#9E2A2B]">Weekly Expenses</p>
-                      <p className="text-xl font-extrabold text-[#9E2A2B] mt-1">{formatPGK(weeklyReport.totalExp)}</p>
-                    </div>
                     <div className="p-4 rounded-xl bg-[#162238] text-white">
-                      <p className="text-[11px] font-bold uppercase text-[#E5C98B]">Net Weekly Surplus</p>
+                      <p className="text-[11px] font-bold uppercase text-[#E5C98B]">Weekly Net Profit</p>
                       <p className="text-xl font-extrabold mt-1">{formatPGK(weeklyReport.netWeekly)}</p>
+                    </div>
+                  </div>
+
+                  {/* WEEKLY TITHE (10% TO CHURCH) & SR ABEL'S FOUNDATION CHARITY (15%) */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-amber-50/60 border-2 border-[#9A7B3E]/50 rounded-2xl p-4">
+                    <div className="bg-white rounded-xl p-4 border border-[#9A7B3E]/40 shadow-sm">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#9A7B3E]">10% of Weekly Profit → Church</span>
+                      <h5 className="text-base font-extrabold text-[#162238] mt-0.5">Weekly Tithe</h5>
+                      <p className="text-2xl font-extrabold text-[#9A7B3E] mt-1">{formatPGK(weeklyReport.weeklyTithe10)}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Allocated to Church from weekly profit ({formatPGK(weeklyReport.profitBase)}).</p>
+                    </div>
+
+                    <div className="bg-white rounded-xl p-4 border border-emerald-300 shadow-sm">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">15% of Weekly Profit → Livelihood Fund</span>
+                      <h5 className="text-base font-extrabold text-[#162238] mt-0.5">Charity — Sr Abel's Foundation Fund</h5>
+                      <p className="text-2xl font-extrabold text-emerald-700 mt-1">{formatPGK(weeklyReport.srAbelCharity15)}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Put into Sr Abel's Foundation Fund to improve people's livelihood.</p>
+                    </div>
+
+                    <div className="bg-[#162238] text-white rounded-xl p-4 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#E5C98B]">After 10% Tithe & 15% Charity</span>
+                        <h5 className="text-base font-extrabold mt-0.5">Net Retained Balance</h5>
+                        <p className="text-2xl font-extrabold text-white mt-1">{formatPGK(weeklyReport.retainedAfterTitheCharity)}</p>
+                      </div>
+                      <p className="text-[11px] text-slate-300 mt-1">Remaining weekly operating balance after Tithe & Foundation Charity.</p>
                     </div>
                   </div>
 
