@@ -929,9 +929,7 @@ function TunzAccessoriesSuite() {
     const id = d.id || `${prefix}-2026-${String(documents.length + 1).padStart(3, '0')}`;
     const isCars = d.division === 'Tunz Cars';
     const isTrip = d.unitLabel === 'Trip';
-    const qty = isCars && !isTrip && d.startDate && d.endDate
-      ? calcDaysInclusive(d.startDate, d.endDate)
-      : Math.max(1, Number(d.qty || 1));
+    const qty = Math.max(1, Number(d.qty || 1));
     const unitLabel = isCars
       ? (isTrip ? 'Trip' : (qty === 1 ? 'Day' : 'Days'))
       : (d.unitLabel || 'Units');
@@ -1027,9 +1025,7 @@ function TunzAccessoriesSuite() {
   const getDocQtyAndLabel = (docItem) => {
     const isCars = docItem.division === 'Tunz Cars';
     const isTrip = docItem.unitLabel === 'Trip';
-    const qtyVal = (isCars && !isTrip && docItem.startDate && docItem.endDate)
-      ? calcDaysInclusive(docItem.startDate, docItem.endDate)
-      : Math.max(1, Number(docItem.qty || 1));
+    const qtyVal = Math.max(1, Number(docItem.qty || 1));
     const unitLabel = isCars
       ? (isTrip ? 'Trip' : (qtyVal === 1 ? 'Day' : 'Days'))
       : (docItem.unitLabel || 'Units');
@@ -3111,10 +3107,16 @@ function DocumentModal({ initial, vehicles, onClose, onSave }) {
 
   const isCars = form.division === 'Tunz Cars';
   const isTrip = form.unitLabel === 'Trip';
-  const computedQty = (isCars && !isTrip && form.startDate && form.endDate)
-    ? calcDaysInclusive(form.startDate, form.endDate)
-    : Math.max(1, Number(form.qty || 1));
+  const computedQty = Math.max(1, Number(form.qty || 1));
   const computedTotal = computedQty * Number(form.unitRate || 0);
+
+  const addDaysToDateStr = (startStr, numDays) => {
+    const baseStr = startStr || today;
+    const d = new Date(baseStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return baseStr;
+    d.setDate(d.getDate() + Math.max(0, Number(numDays || 1) - 1));
+    return d.toISOString().slice(0, 10);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -3187,7 +3189,12 @@ function DocumentModal({ initial, vehicles, onClose, onSave }) {
                 value={form.startDate || today}
                 onChange={e => {
                   const s = e.target.value;
-                  setForm(prev => ({ ...prev, startDate: s, endDate: (prev.endDate || s) < s ? s : prev.endDate }));
+                  const daysNow = Math.max(1, Number(form.qty || 1));
+                  setForm(prev => ({
+                    ...prev,
+                    startDate: s,
+                    endDate: addDaysToDateStr(s, daysNow)
+                  }));
                 }}
                 className="w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white"
               />
@@ -3199,7 +3206,12 @@ function DocumentModal({ initial, vehicles, onClose, onSave }) {
                 required
                 min={form.startDate || today}
                 value={form.endDate || form.startDate || today}
-                onChange={e => setForm({ ...form, endDate: e.target.value })}
+                onChange={e => {
+                  const endVal = e.target.value;
+                  const sVal = form.startDate || today;
+                  const nextDays = calcDaysInclusive(sVal, endVal);
+                  setForm(prev => ({ ...prev, endDate: endVal, qty: nextDays }));
+                }}
                 className="w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white"
               />
             </div>
@@ -3209,15 +3221,28 @@ function DocumentModal({ initial, vehicles, onClose, onSave }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">
-              {isCars ? 'Calculated Days' : 'Quantity (Units)'}
+              {isCars ? (isTrip ? 'Trips' : 'Duration (Days) — Editable') : 'Quantity (Units)'}
             </label>
             <input
               type="number"
               min="1"
-              readOnly={isCars && !isTrip}
-              value={computedQty}
-              onChange={e => setForm({ ...form, qty: e.target.value })}
-              className={`w-full border rounded-lg px-3 py-2 text-sm font-bold ${isCars && !isTrip ? 'bg-slate-100 text-slate-700' : ''}`}
+              required
+              value={form.qty ?? ''}
+              onChange={e => {
+                const rawVal = e.target.value;
+                const parsedDays = Math.max(1, parseInt(rawVal || '1', 10) || 1);
+                setForm(prev => ({
+                  ...prev,
+                  qty: rawVal === '' ? '' : parsedDays,
+                  endDate: (isCars && !isTrip) ? addDaysToDateStr(prev.startDate || today, parsedDays) : prev.endDate
+                }));
+              }}
+              onBlur={() => {
+                if (!form.qty || Number(form.qty) < 1) {
+                  setForm(prev => ({ ...prev, qty: 1 }));
+                }
+              }}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold bg-white"
             />
           </div>
           <div>
