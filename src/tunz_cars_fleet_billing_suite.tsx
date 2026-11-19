@@ -4,7 +4,7 @@ import {
   Plus, Edit2, Trash2, CheckCircle, Clock, AlertTriangle, Printer,
   Download, Search, Lock, Unlock, Phone, Mail, MapPin, DollarSign,
   TrendingUp, Users, ArrowRight, X, Check, Building2, Eye, Send,
-  Sparkles, Package, Laptop, ShoppingBag, Layers, Briefcase, Upload, Image as ImageIcon, Copy, Navigation, ExternalLink
+  Sparkles, Package, Laptop, ShoppingBag, Layers, Briefcase, Upload, Image as ImageIcon, Copy, Navigation, ExternalLink, Settings, Sliders
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -23,9 +23,9 @@ const YOUR_FIREBASE_CONFIG_HERE = {
   appId: "1:733661606615:web:6d8fc8d47d477f565557692"
 };
 
-// Official Logo Paths (stored in GitHub public/ folder)
-const TA_LOGO_URL = '/ta-logo.png';
-const TC_LOGO_URL = '/tc-logo.jpg';
+// Default Fallback Logos (also editable live in Admin Settings!)
+const DEFAULT_TA_LOGO = '/ta-logo.png';
+const DEFAULT_TC_LOGO = '/tc-logo.jpg';
 
 // Papua New Guinea 4 Regions & Current Towns
 const PNG_REGIONS_AND_TOWNS = {
@@ -70,10 +70,22 @@ const PNG_REGIONS_AND_TOWNS = {
   ]
 };
 
-const app = initializeApp(YOUR_FIREBASE_CONFIG_HERE);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const APP_ID = 'tunz-accessories-group-prod';
+const DEFAULT_SETTINGS = {
+  companyName: 'Tunz Accessories',
+  tagline: 'Papua New Guinea Commercial Enterprise',
+  heroDescription: 'Select a division below to access vehicle hire, chauffeur & parcel delivery services, organic coconut oil products, IT & custom merchandise, or our online payment portal.',
+  phoneDisplay: '+675 7962 5068',
+  whatsappNumber: '67579625068', // Digits only for wa.me links
+  email: 'tuneabel@gmail.com',
+  ipaNumber: '6-136546287',
+  tinNumber: '501982530',
+  bankName: 'Bank South Pacific (BSP) — Kavieng',
+  accountName: 'Barrie Tunz Jr Abel',
+  accountNumber: '1001252316',
+  adminPin: '2026',
+  taLogoUrl: DEFAULT_TA_LOGO,
+  tcLogoUrl: DEFAULT_TC_LOGO
+};
 
 const INITIAL_FLEET = [
   {
@@ -126,10 +138,44 @@ const INITIAL_FLEET = [
   }
 ];
 
+const INITIAL_CAR_SERVICES = [
+  {
+    id: 'TC-SRV-01',
+    title: 'Vehicle Hire (Self-Drive)',
+    pricingMode: 'per_day', // 'per_day' | 'flat_trip'
+    rate: 0, // Added on top of vehicle daily rate
+    badge: 'Daily Rate',
+    description: 'Daily self-drive rental across town & highway (Vehicle daily rate applies)',
+    requiresLicense: true,
+    active: true
+  },
+  {
+    id: 'TC-SRV-02',
+    title: 'Chauffeur Service',
+    pricingMode: 'per_day',
+    rate: 50, // +K50/day on top of vehicle daily rate
+    badge: 'Driver Included',
+    description: 'Dedicated professional PNG driver (+K50/day chauffeur allowance)',
+    requiresLicense: false,
+    active: true
+  },
+  {
+    id: 'TC-SRV-03',
+    title: 'Parcel Pick up & Delivery',
+    pricingMode: 'flat_trip',
+    rate: 65, // Flat trip rate
+    badge: 'Point-to-Point',
+    description: 'Same-day courier & cargo drop-off across town & nearby centres',
+    requiresLicense: false,
+    active: true
+  }
+];
+
 const INITIAL_CATALOG = [
   {
     id: 'TA-ORG-01',
     division: 'Tunz Organics',
+    itemType: 'Product',
     name: 'Cold-Process Virgin Coconut Oil Soap (110g)',
     unit: 'Per Bar / 24-Bar Eco-Resort Box',
     unitPrice: 15,
@@ -140,6 +186,7 @@ const INITIAL_CATALOG = [
   {
     id: 'TA-ORG-02',
     division: 'Tunz Organics',
+    itemType: 'Product',
     name: 'Eco-Resort Hospitality Amenity Pack (50 Bars)',
     unit: 'Wholesale Carton',
     unitPrice: 650,
@@ -150,6 +197,7 @@ const INITIAL_CATALOG = [
   {
     id: 'TA-TECH-01',
     division: 'Tech & Merch',
+    itemType: 'Product',
     name: 'Enterprise Refurbished Laptop Package (Dell Latitude / HP)',
     unit: 'Per Unit (Configured)',
     unitPrice: 2450,
@@ -160,12 +208,24 @@ const INITIAL_CATALOG = [
   {
     id: 'TA-TECH-02',
     division: 'Tech & Merch',
+    itemType: 'Product',
     name: 'Custom Branded Corporate Polo & Event Apparel',
     unit: 'Minimum 20 Units (Per Shirt)',
     unitPrice: 65,
     stock: 250,
     status: 'Made to Order',
     description: 'Custom embroidered and sublimated uniforms, event shirts, and promotional merchandise across PNG.'
+  },
+  {
+    id: 'TA-TECH-03',
+    division: 'Tech & Merch',
+    itemType: 'Service',
+    name: 'Custom Graphic Design, Branding & IT Setup Service',
+    unit: 'Per Project / Package',
+    unitPrice: 350,
+    stock: 99,
+    status: 'Available',
+    description: 'Logo creation, institutional banner/poster design, Canvas/LMS setup, and laptop diagnostics.'
   }
 ];
 
@@ -211,19 +271,18 @@ const numberToWordsPGK = (amount) => {
   return `${words.trim()} Kina${toea > 0 ? ` and ${toea} Toea` : ''} Only`;
 };
 
-const compressReceiptImage = (file) => new Promise((resolve, reject) => {
+const compressImageFile = (file, maxW = 900) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = (ev) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const maxW = 900;
       const scale = img.width > maxW ? maxW / img.width : 1;
       canvas.width = img.width * scale;
       canvas.height = img.height * scale;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.72));
+      resolve(canvas.toDataURL('image/png', 0.85));
     };
     img.onerror = reject;
     img.src = ev.target.result;
@@ -240,8 +299,12 @@ function TunzAccessoriesSuite() {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [copiedAcc, setCopiedAcc] = useState(false);
+  const [settingsSavedBanner, setSettingsSavedBanner] = useState(false);
 
+  // Live Cloud-Synced State (Fully Editable Inside Admin!)
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [vehicles, setVehicles] = useState(INITIAL_FLEET);
+  const [carServices, setCarServices] = useState(INITIAL_CAR_SERVICES);
   const [catalog, setCatalog] = useState(INITIAL_CATALOG);
   const [inquiries, setInquiries] = useState([]);
   const [documents, setDocuments] = useState(INITIAL_DOCS);
@@ -249,8 +312,10 @@ function TunzAccessoriesSuite() {
   const [paymentSubmissions, setPaymentSubmissions] = useState([]);
   const [expenses, setExpenses] = useState([]);
 
+  // Admin Navigation & Modals
   const [adminTab, setAdminTab] = useState('overview');
   const [vehModal, setVehModal] = useState({ open: false, data: null });
+  const [srvModal, setSrvModal] = useState({ open: false, data: null });
   const [catModal, setCatModal] = useState({ open: false, data: null });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [docModal, setDocModal] = useState({ open: false, data: null });
@@ -266,7 +331,7 @@ function TunzAccessoriesSuite() {
 
   const [carForm, setCarForm] = useState({
     vehicleId: 'TC-VEH-01',
-    serviceType: 'Vehicle Hire (Self-Drive)', // 'Vehicle Hire (Self-Drive)' | 'Chauffeur Service' | 'Parcel Pick up & Delivery'
+    serviceId: 'TC-SRV-01',
     clientName: '',
     organization: '',
     phone: '',
@@ -276,7 +341,7 @@ function TunzAccessoriesSuite() {
     pickupAddress: 'Kavieng Airport (KVG), New Ireland Province',
     dropoffAddress: 'Kavieng Town Center',
     googleMapsLink: '',
-    parcelDetails: ''
+    serviceNotes: ''
   });
 
   const [orderForm, setOrderForm] = useState({
@@ -314,8 +379,16 @@ function TunzAccessoriesSuite() {
     if (!user) return;
     const base = ['artifacts', APP_ID, 'public', 'data'];
 
+    const u0 = onSnapshot(doc(db, ...base, 'config', 'site_settings'), (snap) => {
+      if (snap.exists()) {
+        setSettings(prev => ({ ...prev, ...snap.data() }));
+      }
+    }, () => {});
     const u1 = onSnapshot(query(collection(db, ...base, 'vehicles')), (s) => {
       if (!s.empty) setVehicles(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    const u1b = onSnapshot(query(collection(db, ...base, 'car_services')), (s) => {
+      if (!s.empty) setCarServices(s.docs.map(d => ({ id: d.id, ...d.data() })));
     }, () => {});
     const u2 = onSnapshot(query(collection(db, ...base, 'catalog')), (s) => {
       if (!s.empty) setCatalog(s.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -336,7 +409,7 @@ function TunzAccessoriesSuite() {
       setPaymentSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() })));
     }, () => {});
 
-    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); };
+    return () => { u0(); u1(); u1b(); u2(); u3(); u4(); u5(); u6(); u7(); };
   }, [user]);
 
   const saveCloud = async (col, id, payload) => {
@@ -359,6 +432,13 @@ function TunzAccessoriesSuite() {
     return diff > 0 ? diff : 1;
   };
 
+  // Active Car Services & Selected Service
+  const activeCarServices = useMemo(() => carServices.filter(s => s.active !== false), [carServices]);
+  const selectedCarService = useMemo(
+    () => activeCarServices.find(s => s.id === carForm.serviceId) || activeCarServices[0] || INITIAL_CAR_SERVICES[0],
+    [activeCarServices, carForm.serviceId]
+  );
+
   // Filtered Public Fleet by PNG Region & Town
   const publicVehicles = useMemo(() => {
     return vehicles.filter(v => {
@@ -376,7 +456,6 @@ function TunzAccessoriesSuite() {
     [publicVehicles, carForm.vehicleId]
   );
 
-  // Sync default pickup town when selected vehicle changes
   useEffect(() => {
     if (selectedVehicle?.town) {
       setCarForm(prev => ({
@@ -386,11 +465,13 @@ function TunzAccessoriesSuite() {
     }
   }, [selectedVehicle?.id]);
 
-  const isParcelMode = carForm.serviceType === 'Parcel Pick up & Delivery';
-  const rentalDays = isParcelMode ? 1 : calcDays(carForm.startDate, carForm.endDate);
-  const serviceSurcharge = carForm.serviceType === 'Chauffeur Service' ? 50 * rentalDays : 0;
-  const baseCarCost = isParcelMode ? 65 : (selectedVehicle?.dailyRate || 250) * rentalDays;
-  const rentalTotal = baseCarCost + serviceSurcharge;
+  const isFlatTripService = selectedCarService?.pricingMode === 'flat_trip';
+  const rentalDays = isFlatTripService ? 1 : calcDays(carForm.startDate, carForm.endDate);
+  const serviceExtraCost = isFlatTripService
+    ? Number(selectedCarService?.rate || 65)
+    : Number(selectedCarService?.rate || 0) * rentalDays;
+  const baseCarCost = isFlatTripService ? 0 : (selectedVehicle?.dailyRate || 250) * rentalDays;
+  const rentalTotal = baseCarCost + serviceExtraCost;
 
   // Google Maps Embed & Direct Pin URL
   const mapQueryLocation = useMemo(() => {
@@ -443,22 +524,24 @@ function TunzAccessoriesSuite() {
     if (!selectedVehicle) return;
     const id = `TC-BK-2026-${String(inquiries.length + 101).padStart(3, '0')}`;
     const mapNote = carForm.googleMapsLink ? ` • Map Pin: ${carForm.googleMapsLink}` : '';
-    const extraInfo = isParcelMode
-      ? `Parcel: ${carForm.parcelDetails || 'Standard Parcel'} • From: ${carForm.pickupAddress} → To: ${carForm.dropoffAddress}${mapNote}`
-      : `${carForm.serviceType} • Pickup: ${carForm.pickupAddress} → Dropoff: ${carForm.dropoffAddress} • Lic: ${carForm.licenseNo || 'Chauffeur'}${mapNote}`;
+    const extraInfo = `${selectedCarService.title} • Pickup: ${carForm.pickupAddress} → Dropoff: ${carForm.dropoffAddress}${
+      carForm.serviceNotes ? ` • Note: ${carForm.serviceNotes}` : ''
+    }${carForm.licenseNo ? ` • Lic: ${carForm.licenseNo}` : ''}${mapNote}`;
 
     const record = {
       id,
       division: 'Tunz Cars',
-      serviceType: carForm.serviceType,
+      serviceType: selectedCarService.title,
       clientName: carForm.clientName,
       organization: carForm.organization,
       phone: carForm.phone,
-      itemSummary: `${carForm.serviceType}: ${selectedVehicle.name} (${selectedVehicle.plate} • ${selectedVehicle.town || 'Kavieng'})`,
+      itemSummary: `${selectedCarService.title}: ${selectedVehicle.name} (${selectedVehicle.plate} • ${selectedVehicle.town || 'Kavieng'})`,
       startDate: carForm.startDate,
-      endDate: isParcelMode ? carForm.startDate : carForm.endDate,
+      endDate: isFlatTripService ? carForm.startDate : carForm.endDate,
       qty: rentalDays,
-      unitRate: isParcelMode ? 65 : (selectedVehicle.dailyRate + (carForm.serviceType === 'Chauffeur Service' ? 50 : 0)),
+      unitRate: isFlatTripService
+        ? Number(selectedCarService.rate || 65)
+        : Number(selectedVehicle.dailyRate || 250) + Number(selectedCarService.rate || 0),
       totalAmount: rentalTotal,
       pickupAddress: carForm.pickupAddress,
       dropoffAddress: carForm.dropoffAddress,
@@ -483,7 +566,7 @@ function TunzAccessoriesSuite() {
       clientName: orderForm.clientName,
       organization: orderForm.organization,
       phone: orderForm.phone,
-      itemSummary: selectedProduct.name,
+      itemSummary: `${selectedProduct.name}${selectedProduct.itemType ? ` [${selectedProduct.itemType}]` : ''}`,
       startDate: new Date().toISOString().slice(0, 10),
       endDate: new Date().toISOString().slice(0, 10),
       qty: Number(orderForm.quantity || 1),
@@ -503,7 +586,7 @@ function TunzAccessoriesSuite() {
     if (!file) return;
     setUploadingProof(true);
     try {
-      const compressed = await compressReceiptImage(file);
+      const compressed = await compressImageFile(file, 900);
       setClientPayForm(prev => ({
         ...prev,
         receiptImage: compressed,
@@ -588,13 +671,13 @@ function TunzAccessoriesSuite() {
 
   const handlePinUnlock = (e) => {
     e.preventDefault();
-    if (pinInput === '2026') {
+    if (pinInput === (settings.adminPin || '2026')) {
       setMode('admin');
       setShowPinModal(false);
       setPinInput('');
       setPinError('');
     } else {
-      setPinError('Invalid PIN. Enter Owner PIN (2026).');
+      setPinError('Invalid PIN. Check Owner PIN.');
     }
   };
 
@@ -616,7 +699,7 @@ function TunzAccessoriesSuite() {
       startDate: inq.startDate,
       endDate: inq.endDate,
       qty: inq.qty,
-      unitLabel: inq.serviceType === 'Parcel Pick up & Delivery' ? 'Trips' : (inq.division === 'Tunz Cars' ? 'Days' : 'Units'),
+      unitLabel: inq.division === 'Tunz Cars' ? (inq.qty === 1 ? 'Trip/Day' : 'Days') : 'Units',
       unitRate: inq.unitRate,
       totalAmount: inq.totalAmount,
       paidAmount: 0,
@@ -625,6 +708,17 @@ function TunzAccessoriesSuite() {
     setDocuments(prev => [newDoc, ...prev]);
     await saveCloud('documents', piId, newDoc);
     setAdminTab('billing');
+  };
+
+  // Save Site & WhatsApp Settings Live
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    const cleanedWa = String(settings.whatsappNumber || '').replace(/[^0-9]/g, '');
+    const updated = { ...settings, whatsappNumber: cleanedWa || '67579625068' };
+    setSettings(updated);
+    await saveCloud('config', 'site_settings', updated);
+    setSettingsSavedBanner(true);
+    setTimeout(() => setSettingsSavedBanner(false), 3000);
   };
 
   const saveVehicle = async (v) => {
@@ -644,10 +738,25 @@ function TunzAccessoriesSuite() {
     setVehModal({ open: false, data: null });
   };
 
+  const saveCarService = async (srv) => {
+    const isNew = !srv.id;
+    const id = srv.id || `TC-SRV-${String(carServices.length + 1).padStart(2, '0')}`;
+    const rec = { ...srv, id, rate: Number(srv.rate || 0), active: srv.active !== false };
+    setCarServices(prev => isNew ? [...prev, rec] : prev.map(x => x.id === id ? rec : x));
+    await saveCloud('car_services', id, rec);
+    setSrvModal({ open: false, data: null });
+  };
+
   const saveCatalogItem = async (item) => {
     const isNew = !item.id;
     const id = item.id || `TA-SKU-${String(catalog.length + 1).padStart(2, '0')}`;
-    const rec = { ...item, id, unitPrice: Number(item.unitPrice || 0), stock: Number(item.stock || 0) };
+    const rec = {
+      ...item,
+      id,
+      itemType: item.itemType || 'Product',
+      unitPrice: Number(item.unitPrice || 0),
+      stock: Number(item.stock || 0)
+    };
     setCatalog(prev => isNew ? [...prev, rec] : prev.map(x => x.id === id ? rec : x));
     await saveCloud('catalog', id, rec);
     setCatModal({ open: false, data: null });
@@ -716,7 +825,8 @@ function TunzAccessoriesSuite() {
   const exportCSV = (filename, rows) => {
     if (!rows.length) return;
     const headers = Object.keys(rows[0]).filter(k => k !== 'receiptImage');
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('
+');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -726,29 +836,30 @@ function TunzAccessoriesSuite() {
 
   const pendingProofsCount = paymentSubmissions.filter(s => s.status === 'Pending Verification').length;
   const pendingInquiriesCount = inquiries.filter(i => i.status === 'Pending Approval').length;
+  const waNumber = String(settings.whatsappNumber || '67579625068').replace(/[^0-9]/g, '');
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* GROUP HEADER WITH TUNZ ACCESSORIES LOGO */}
+      {/* GROUP HEADER */}
       <header className="bg-[#162238] text-white border-b-4 border-[#9A7B3E] sticky top-0 z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3.5">
             <div className="bg-white rounded-xl p-1.5 shadow-md flex items-center justify-center shrink-0">
               <img
-                src={TA_LOGO_URL}
+                src={settings.taLogoUrl || DEFAULT_TA_LOGO}
                 alt="Tunz Accessories Logo"
                 className="h-11 w-auto object-contain"
               />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-extrabold tracking-wide">TUNZ ACCESSORIES</h1>
+                <h1 className="text-lg font-extrabold tracking-wide uppercase">{settings.companyName || 'TUNZ ACCESSORIES'}</h1>
                 <span className="text-[10px] uppercase tracking-widest bg-[#9A7B3E]/20 text-[#E5C98B] border border-[#9A7B3E]/40 px-2 py-0.5 rounded">
                   Group Holding • PNG
                 </span>
               </div>
               <p className="text-xs text-slate-300">
-                IPA Reg #: 6-136546287 • IRC TIN: 501982530 • Papua New Guinea
+                IPA Reg #: {settings.ipaNumber} • IRC TIN: {settings.tinNumber} • WhatsApp: {settings.phoneDisplay}
               </p>
             </div>
           </div>
@@ -784,27 +895,34 @@ function TunzAccessoriesSuite() {
       {/* PUBLIC CLIENT PORTAL */}
       {mode === 'public' && (
         <main className="max-w-6xl mx-auto px-4 py-8">
-          {/* CLEAN LANDING HERO WITH ONLY TUNZ ACCESSORIES AS THE MAIN TITLE */}
+          {/* LANDING HERO WITH ONLY TUNZ ACCESSORIES AS MAIN TITLE */}
           <div className="bg-gradient-to-r from-[#162238] via-[#1f304f] to-[#162238] text-white rounded-2xl p-6 md:p-8 mb-6 shadow-lg border border-[#9A7B3E]/30 flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="max-w-2xl">
               <span className="inline-block text-xs font-bold uppercase tracking-widest text-[#E5C98B] mb-1.5">
-                Papua New Guinea Commercial Enterprise
+                {settings.tagline}
               </span>
               <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-2">
-                Tunz Accessories
+                {settings.companyName}
               </h2>
               <p className="text-sm text-slate-300 mb-4">
-                Select a division below to access vehicle hire, chauffeur & parcel delivery services, organic coconut oil products, IT & custom merchandise, or our online payment portal.
+                {settings.heroDescription}
               </p>
-              <div className="flex flex-wrap gap-4 text-xs text-slate-200">
-                <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-[#E5C98B]" /> +675 7962 5068</span>
-                <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#E5C98B]" /> tuneabel@gmail.com</span>
+              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-200">
+                <a
+                  href={`https://wa.me/${waNumber}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 bg-emerald-600/20 border border-emerald-500/40 px-2.5 py-1 rounded-lg hover:bg-emerald-600/30 transition"
+                >
+                  <Phone className="w-3.5 h-3.5 text-emerald-400" /> WhatsApp: {settings.phoneDisplay}
+                </a>
+                <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#E5C98B]" /> {settings.email}</span>
                 <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-[#E5C98B]" /> NGI • Southern • Momase • Highlands</span>
               </div>
             </div>
             <div className="bg-white rounded-2xl p-4 shadow-xl border-2 border-[#9A7B3E] shrink-0">
               <img
-                src={TA_LOGO_URL}
+                src={settings.taLogoUrl || DEFAULT_TA_LOGO}
                 alt="Tunz Accessories Official Brand"
                 className="h-24 md:h-28 w-auto object-contain"
               />
@@ -820,7 +938,7 @@ function TunzAccessoriesSuite() {
               }`}
             >
               <img
-                src={TC_LOGO_URL}
+                src={settings.tcLogoUrl || DEFAULT_TC_LOGO}
                 alt="Tunz Cars Logo"
                 className="w-12 h-12 rounded-lg object-contain bg-white border border-slate-100 p-0.5 shrink-0"
               />
@@ -832,7 +950,12 @@ function TunzAccessoriesSuite() {
             </button>
 
             <button
-              onClick={() => { setPublicTab('organics'); setSubmitSuccess(null); setOrderForm(f => ({ ...f, itemId: 'TA-ORG-01', quantity: 10 })); }}
+              onClick={() => {
+                setPublicTab('organics');
+                setSubmitSuccess(null);
+                const firstOrg = catalog.find(c => c.division === 'Tunz Organics');
+                if (firstOrg) setOrderForm(f => ({ ...f, itemId: firstOrg.id, quantity: 10 }));
+              }}
               className={`p-3.5 rounded-xl border-2 text-left transition flex items-center gap-3 ${
                 publicTab === 'organics' ? 'bg-white border-[#9A7B3E] shadow-md' : 'bg-white/70 border-slate-200 hover:bg-white'
               }`}
@@ -843,12 +966,17 @@ function TunzAccessoriesSuite() {
               <div>
                 <div className="text-[10px] font-bold uppercase text-emerald-700">Subsidiary 02</div>
                 <div className="font-extrabold text-sm text-slate-900">Tunz Organics</div>
-                <div className="text-[11px] text-slate-500">Coconut Oil Soaps</div>
+                <div className="text-[11px] text-slate-500">Coconut Oil Products</div>
               </div>
             </button>
 
             <button
-              onClick={() => { setPublicTab('tech'); setSubmitSuccess(null); setOrderForm(f => ({ ...f, itemId: 'TA-TECH-01', quantity: 2 })); }}
+              onClick={() => {
+                setPublicTab('tech');
+                setSubmitSuccess(null);
+                const firstTech = catalog.find(c => c.division === 'Tech & Merch');
+                if (firstTech) setOrderForm(f => ({ ...f, itemId: firstTech.id, quantity: 1 }));
+              }}
               className={`p-3.5 rounded-xl border-2 text-left transition flex items-center gap-3 ${
                 publicTab === 'tech' ? 'bg-white border-[#9A7B3E] shadow-md' : 'bg-white/70 border-slate-200 hover:bg-white'
               }`}
@@ -859,7 +987,7 @@ function TunzAccessoriesSuite() {
               <div>
                 <div className="text-[10px] font-bold uppercase text-[#9E2A2B]">Division 03</div>
                 <div className="font-extrabold text-sm text-slate-900">Tech & Merch</div>
-                <div className="text-[11px] text-slate-500">Laptops & Apparel</div>
+                <div className="text-[11px] text-slate-500">Products & Services</div>
               </div>
             </button>
 
@@ -927,10 +1055,10 @@ function TunzAccessoriesSuite() {
                   </button>
                 )}
                 <a
-                  href={`https://wa.me/67579625068?text=${encodeURIComponent(
+                  href={`https://wa.me/${waNumber}?text=${encodeURIComponent(
                     submitSuccess.isPaymentProof
-                      ? `Hello Tunz Accessories, I uploaded payment proof ${submitSuccess.id} for ${formatPGK(submitSuccess.totalAmount)}. ${submitSuccess.details}`
-                      : `Hello Tunz Accessories (${submitSuccess.division}), I submitted request ${submitSuccess.id} for ${submitSuccess.itemSummary} (Total: ${formatPGK(submitSuccess.totalAmount)}).`
+                      ? `Hello ${settings.companyName}, I uploaded payment proof ${submitSuccess.id} for ${formatPGK(submitSuccess.totalAmount)}. ${submitSuccess.details}`
+                      : `Hello ${settings.companyName} (${submitSuccess.division}), I submitted request ${submitSuccess.id} for ${submitSuccess.itemSummary} (Total: ${formatPGK(submitSuccess.totalAmount)}).`
                   )}`}
                   target="_blank"
                   rel="noreferrer"
@@ -951,24 +1079,24 @@ function TunzAccessoriesSuite() {
               <div className="space-y-4">
                 <div className="bg-[#162238] text-white rounded-2xl p-6 shadow-md border-t-4 border-[#9A7B3E]">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-[#E5C98B]">Official Settlement Account</span>
-                  <h3 className="text-xl font-extrabold mt-1 mb-4">BSP Bank Transfer Details</h3>
+                  <h3 className="text-xl font-extrabold mt-1 mb-4">Bank Transfer Details</h3>
                   <div className="space-y-3 text-sm bg-slate-900/60 p-4 rounded-xl border border-slate-700">
                     <div>
                       <p className="text-[11px] text-slate-400">Bank & Branch</p>
-                      <p className="font-bold">Bank South Pacific (BSP) — Kavieng</p>
+                      <p className="font-bold">{settings.bankName}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-slate-400">Account Name</p>
-                      <p className="font-bold">Barrie Tunz Jr Abel</p>
+                      <p className="font-bold">{settings.accountName}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-slate-400">Account Number</p>
                       <div className="flex items-center justify-between gap-2 mt-0.5">
-                        <span className="font-mono text-lg font-extrabold text-[#E5C98B]">1001252316</span>
+                        <span className="font-mono text-lg font-extrabold text-[#E5C98B]">{settings.accountNumber}</span>
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard?.writeText('1001252316');
+                            navigator.clipboard?.writeText(settings.accountNumber);
                             setCopiedAcc(true);
                             setTimeout(() => setCopiedAcc(false), 2000);
                           }}
@@ -980,18 +1108,18 @@ function TunzAccessoriesSuite() {
                     </div>
                     <div>
                       <p className="text-[11px] text-slate-400">IRC TIN / IPA Registration</p>
-                      <p className="text-xs font-mono">TIN: 501982530 • IPA: 6-136546287</p>
+                      <p className="text-xs font-mono">TIN: {settings.tinNumber} • IPA: {settings.ipaNumber}</p>
                     </div>
                   </div>
                   <p className="text-xs text-slate-300 mt-4 leading-relaxed">
-                    Use your <strong>Booking ID</strong> (e.g., <span className="font-mono text-[#E5C98B]">TC-BK-2026-101</span>) or <strong>Invoice #</strong> as your BSP transfer narration, then upload your payment receipt on the right.
+                    Use your <strong>Booking ID</strong> or <strong>Invoice #</strong> as your bank transfer narration, then upload your payment receipt on the right.
                   </p>
                 </div>
 
                 <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm text-xs space-y-2">
                   <h4 className="font-bold text-slate-900 text-sm">Accepted Payment Methods</h4>
-                  <p className="text-slate-600">• <strong>BSP Mobile / Internet Banking:</strong> Instant transfer to Account 1001252316.</p>
-                  <p className="text-slate-600">• <strong>Over-the-Counter BSP Deposit:</strong> Upload photo of stamped deposit slip.</p>
+                  <p className="text-slate-600">• <strong>BSP Mobile / Internet Banking:</strong> Instant transfer to Account {settings.accountNumber}.</p>
+                  <p className="text-slate-600">• <strong>Over-the-Counter Bank Deposit:</strong> Upload photo of stamped deposit slip.</p>
                   <p className="text-slate-600">• <strong>Institutional / Hospital LPO:</strong> Upload signed LPO or remittance advice.</p>
                 </div>
               </div>
@@ -1147,64 +1275,44 @@ function TunzAccessoriesSuite() {
               </div>
             </div>
           ) : publicTab === 'cars' ? (
-            /* TUNZ CARS PUBLIC PORTAL: HIRE, CHAUFFEURS, PARCEL DELIVERY + PNG REGION/TOWN + GOOGLE MAPS */
+            /* TUNZ CARS PUBLIC PORTAL: DYNAMIC SERVICES + PNG REGION/TOWN + GOOGLE MAPS */
             <div className="space-y-6">
-              {/* Tunz Cars Division Banner */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <img
-                    src={TC_LOGO_URL}
+                    src={settings.tcLogoUrl || DEFAULT_TC_LOGO}
                     alt="Tunz Cars Official Logo"
                     className="h-16 w-16 rounded-xl object-contain border border-slate-200 p-1 bg-white shadow-sm"
                   />
                   <div>
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#9A7B3E]">A Subsidiary of Tunz Accessories</span>
-                    <h3 className="text-xl font-extrabold text-[#162238]">Tunz Cars — Vehicle Hire, Chauffeurs & Parcel Delivery</h3>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#9A7B3E]">A Subsidiary of {settings.companyName}</span>
+                    <h3 className="text-xl font-extrabold text-[#162238]">Tunz Cars — Fleet Hire & Transport Services</h3>
                     <p className="text-xs text-slate-500">Filter by PNG Region & Town, select your service mode, and pin your exact location via Google Maps.</p>
                   </div>
                 </div>
               </div>
 
-              {/* Service Mode Selector (Hire, Chauffeurs, Parcel Pick up & Delivery) */}
+              {/* Dynamic Service Mode Selector (Managed by Admin!) */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  {
-                    id: 'Vehicle Hire (Self-Drive)',
-                    title: 'Vehicle Hire (Self-Drive)',
-                    desc: 'Daily self-drive rental across town & highway',
-                    badge: 'Daily Rate'
-                  },
-                  {
-                    id: 'Chauffeur Service',
-                    title: 'Chauffeur Service',
-                    desc: 'Dedicated professional PNG driver (+K50/day)',
-                    badge: 'Driver Included'
-                  },
-                  {
-                    id: 'Parcel Pick up & Delivery',
-                    title: 'Parcel Pick up & Delivery',
-                    desc: 'Same-day courier & cargo drop-off (From K65)',
-                    badge: 'Point-to-Point'
-                  }
-                ].map((srv) => {
-                  const active = carForm.serviceType === srv.id;
+                {activeCarServices.map((srv) => {
+                  const active = selectedCarService?.id === srv.id;
                   return (
                     <button
                       key={srv.id}
                       type="button"
-                      onClick={() => setCarForm(prev => ({ ...prev, serviceType: srv.id }))}
+                      onClick={() => setCarForm(prev => ({ ...prev, serviceId: srv.id }))}
                       className={`p-4 rounded-xl border-2 text-left transition ${
                         active ? 'bg-[#162238] text-white border-[#9A7B3E] shadow-md' : 'bg-white text-slate-900 border-slate-200 hover:border-slate-300'
                       }`}
                     >
                       <div className="flex justify-between items-center mb-1">
                         <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${active ? 'bg-[#9A7B3E] text-white' : 'bg-slate-100 text-slate-600'}`}>
-                          {srv.badge}
+                          {srv.badge || (srv.pricingMode === 'flat_trip' ? `Flat ${formatPGK(srv.rate)}` : srv.rate > 0 ? `+${formatPGK(srv.rate)}/day` : 'Daily Rate')}
                         </span>
                         {active && <span className="text-xs font-bold text-[#E5C98B]">Active ✓</span>}
                       </div>
                       <div className="font-extrabold text-sm mt-1">{srv.title}</div>
-                      <div className={`text-xs mt-0.5 ${active ? 'text-slate-300' : 'text-slate-500'}`}>{srv.desc}</div>
+                      <div className={`text-xs mt-0.5 ${active ? 'text-slate-300' : 'text-slate-500'}`}>{srv.description}</div>
                     </button>
                   );
                 })}
@@ -1241,13 +1349,13 @@ function TunzAccessoriesSuite() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left 2 Columns: Fleet Cards + Live Google Maps Pin & Route Preview */}
+                {/* Left 2 Columns: Fleet Cards + Google Maps */}
                 <div className="lg:col-span-2 space-y-6">
                   <div className="space-y-3">
                     <h3 className="text-lg font-bold text-[#162238]">1. Select Fleet Vehicle ({publicVehicles.length} Available)</h3>
                     {publicVehicles.length === 0 ? (
                       <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-sm text-slate-500">
-                        No fleet vehicles listed in this town yet. Switch filter to "All 4 PNG Regions" or contact us for special deployment.
+                        No fleet vehicles listed in this town yet. Switch filter to "All 4 PNG Regions" or WhatsApp us at {settings.phoneDisplay}.
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1331,19 +1439,19 @@ function TunzAccessoriesSuite() {
                   </div>
                 </div>
 
-                {/* Right Column: Reservation / Chauffeur / Parcel Form */}
+                {/* Right Column: Service Reservation Form */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
-                  <h3 className="text-lg font-bold text-[#162238] mb-1">2. {carForm.serviceType}</h3>
+                  <h3 className="text-lg font-bold text-[#162238] mb-1">2. {selectedCarService?.title}</h3>
                   <p className="text-xs text-slate-500 mb-4">Base Location: {selectedVehicle?.town || 'Kavieng'}, {selectedVehicle?.region || 'NGI'}</p>
                   <form onSubmit={handleCarSubmit} className="space-y-3.5">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">
-                          {isParcelMode ? 'Pickup Date *' : 'Start Date *'}
+                          {isFlatTripService ? 'Service / Pickup Date *' : 'Start Date *'}
                         </label>
                         <input type="date" required value={carForm.startDate} onChange={e => setCarForm({ ...carForm, startDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
                       </div>
-                      {!isParcelMode && (
+                      {!isFlatTripService && (
                         <div>
                           <label className="block text-xs font-semibold text-slate-600 mb-1">Return Date *</label>
                           <input type="date" required min={carForm.startDate} value={carForm.endDate} onChange={e => setCarForm({ ...carForm, endDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
@@ -1366,7 +1474,7 @@ function TunzAccessoriesSuite() {
                         <label className="block text-xs font-semibold text-slate-600 mb-1">Phone / WhatsApp *</label>
                         <input type="text" required placeholder="+675 7XXX XXXX" value={carForm.phone} onChange={e => setCarForm({ ...carForm, phone: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
                       </div>
-                      {carForm.serviceType === 'Vehicle Hire (Self-Drive)' && (
+                      {selectedCarService?.requiresLicense && (
                         <div>
                           <label className="block text-xs font-semibold text-slate-600 mb-1">Driver Licence # *</label>
                           <input type="text" required placeholder="PNG Licence" value={carForm.licenseNo} onChange={e => setCarForm({ ...carForm, licenseNo: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
@@ -1388,11 +1496,11 @@ function TunzAccessoriesSuite() {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        {isParcelMode ? 'Parcel Drop-off Destination *' : 'Destination / Drop-off Point'}
+                        {isFlatTripService ? 'Drop-off Destination *' : 'Destination / Drop-off Point'}
                       </label>
                       <input
                         type="text"
-                        required={isParcelMode}
+                        required={isFlatTripService}
                         placeholder="e.g., Kavieng General Hospital / Nusa Jetty"
                         value={carForm.dropoffAddress}
                         onChange={e => setCarForm({ ...carForm, dropoffAddress: e.target.value })}
@@ -1411,29 +1519,31 @@ function TunzAccessoriesSuite() {
                       />
                     </div>
 
-                    {isParcelMode && (
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Parcel Description & Recipient *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g., 2x Cartons Medical Supplies — Attn: Nurse Mary"
-                          value={carForm.parcelDetails}
-                          onChange={e => setCarForm({ ...carForm, parcelDetails: e.target.value })}
-                          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        {isFlatTripService ? 'Parcel Description & Recipient *' : 'Additional Service Notes (Optional)'}
+                      </label>
+                      <input
+                        type="text"
+                        required={isFlatTripService}
+                        placeholder={isFlatTripService ? 'e.g., 2x Cartons Medical Supplies — Attn: Nurse Mary' : 'Flight arrival time or special instructions'}
+                        value={carForm.serviceNotes}
+                        onChange={e => setCarForm({ ...carForm, serviceNotes: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
 
                     <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-1 text-xs">
-                      <div className="flex justify-between text-slate-600">
-                        <span>{isParcelMode ? 'Point-to-Point Parcel Delivery' : `${selectedVehicle?.name} × ${rentalDays} day(s)`}</span>
-                        <span>{formatPGK(baseCarCost)}</span>
-                      </div>
-                      {serviceSurcharge > 0 && (
+                      {!isFlatTripService && (
                         <div className="flex justify-between text-slate-600">
-                          <span>Chauffeur Allowance ({rentalDays}d × K50)</span>
-                          <span>{formatPGK(serviceSurcharge)}</span>
+                          <span>{selectedVehicle?.name} × {rentalDays} day(s)</span>
+                          <span>{formatPGK(baseCarCost)}</span>
+                        </div>
+                      )}
+                      {serviceExtraCost > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                          <span>{selectedCarService?.title} {isFlatTripService ? '(Flat Trip)' : `(${rentalDays}d)`}</span>
+                          <span>{formatPGK(serviceExtraCost)}</span>
                         </div>
                       )}
                       <div className="flex justify-between font-extrabold text-sm text-[#162238] pt-1.5 border-t border-slate-200">
@@ -1443,17 +1553,18 @@ function TunzAccessoriesSuite() {
                     </div>
 
                     <button type="submit" className="w-full py-3 rounded-xl bg-[#9E2A2B] hover:bg-[#822021] text-white font-bold text-sm shadow transition">
-                      Submit {carForm.serviceType}
+                      Submit {selectedCarService?.title}
                     </button>
                   </form>
                 </div>
               </div>
             </div>
           ) : (
+            /* TUNZ ORGANICS & TECH/MERCH PUBLIC STOREFRONT (PRODUCTS & SERVICES) */
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-4">
                 <h3 className="text-lg font-bold text-[#162238]">
-                  1. Select {publicTab === 'organics' ? 'Tunz Organics Wholesale / Retail Package' : 'IT Equipment & Custom Merchandise'}
+                  1. Select {publicTab === 'organics' ? 'Tunz Organics Products & Packages' : 'Tech & Merch Products and Services'}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredCatalog.map((item) => {
@@ -1467,9 +1578,11 @@ function TunzAccessoriesSuite() {
                         }`}
                       >
                         <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">{item.division}</span>
+                          <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">
+                            {item.division} • {item.itemType || 'Product'}
+                          </span>
                           <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                            {item.status} ({item.stock})
+                            {item.status} {item.itemType === 'Service' ? '' : `(${item.stock})`}
                           </span>
                         </div>
                         <h4 className="text-base font-bold text-slate-900 mb-1">{item.name}</h4>
@@ -1489,7 +1602,7 @@ function TunzAccessoriesSuite() {
               </div>
 
               <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
-                <h3 className="text-lg font-bold text-[#162238] mb-4">2. Order / Quote Request</h3>
+                <h3 className="text-lg font-bold text-[#162238] mb-4">2. Order / Service Request</h3>
                 <form onSubmit={handleProductSubmit} className="space-y-3.5">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Quantity *</label>
@@ -1537,7 +1650,7 @@ function TunzAccessoriesSuite() {
         </main>
       )}
 
-      {/* OWNER ADMIN COMMAND CENTER (PIN: 2026) */}
+      {/* OWNER ADMIN COMMAND CENTER */}
       {mode === 'admin' && (
         <main className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-3">
@@ -1545,11 +1658,12 @@ function TunzAccessoriesSuite() {
               { id: 'overview', label: 'Group Overview', icon: TrendingUp },
               { id: 'requests', label: `Client Requests (${pendingInquiriesCount})`, icon: Calendar },
               { id: 'proofs', label: `Payment Proofs (${pendingProofsCount})`, icon: Upload },
-              { id: 'cars', label: 'Tunz Cars Fleet', icon: Car },
-              { id: 'catalog', label: 'Organics & Tech', icon: Package },
+              { id: 'cars', label: 'Tunz Cars Fleet & Services', icon: Car },
+              { id: 'catalog', label: 'Organics & Tech Catalog', icon: Package },
               { id: 'billing', label: 'Quotes & Invoices', icon: FileText },
               { id: 'payments', label: 'BSP Ledger', icon: CreditCard },
-              { id: 'expenses', label: 'Expenses', icon: Fuel }
+              { id: 'expenses', label: 'Expenses', icon: Fuel },
+              { id: 'settings', label: 'Site & WhatsApp Settings', icon: Settings }
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -1587,7 +1701,7 @@ function TunzAccessoriesSuite() {
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                   <p className="text-xs font-semibold text-slate-500 uppercase">Net Group Cashflow</p>
                   <p className="text-2xl font-extrabold text-[#162238] mt-1">{formatPGK(metrics.net)}</p>
-                  <p className="text-xs text-slate-400 mt-1">BSP Acc: 1001252316</p>
+                  <p className="text-xs text-slate-400 mt-1">Acc: {settings.accountNumber}</p>
                 </div>
               </div>
 
@@ -1595,7 +1709,7 @@ function TunzAccessoriesSuite() {
                 <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                   <div className="flex justify-between items-center mb-4">
                     <div className="flex items-center gap-3">
-                      <img src={TC_LOGO_URL} alt="Tunz Cars" className="w-10 h-10 rounded-lg object-contain border" />
+                      <img src={settings.tcLogoUrl || DEFAULT_TC_LOGO} alt="Tunz Cars" className="w-10 h-10 rounded-lg object-contain border" />
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7B3E]">Subsidiary 01</span>
                         <h3 className="font-bold text-slate-900">Tunz Cars — Live PNG Fleet</h3>
@@ -1632,23 +1746,23 @@ function TunzAccessoriesSuite() {
                 <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                   <div className="flex justify-between items-center mb-4">
                     <div className="flex items-center gap-3">
-                      <img src={TA_LOGO_URL} alt="Tunz Accessories" className="w-10 h-10 rounded-lg object-contain border p-0.5" />
+                      <img src={settings.taLogoUrl || DEFAULT_TA_LOGO} alt="Tunz Accessories" className="w-10 h-10 rounded-lg object-contain border p-0.5" />
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Subsidiaries 02 & 03</span>
-                        <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch Inventory</h3>
+                        <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch Catalog</h3>
                       </div>
                     </div>
                     <button onClick={() => setCatModal({ open: true, data: null })} className="px-3 py-1.5 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold flex items-center gap-1">
-                      <Plus className="w-3.5 h-3.5" /> Add Product
+                      <Plus className="w-3.5 h-3.5" /> Add Product/Service
                     </button>
                   </div>
                   <div className="space-y-2.5">
                     {catalog.map(c => (
                       <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50/60">
                         <div>
-                          <span className="text-[10px] font-bold uppercase text-[#9A7B3E]">{c.division}</span>
+                          <span className="text-[10px] font-bold uppercase text-[#9A7B3E]">{c.division} • {c.itemType || 'Product'}</span>
                           <div className="font-bold text-sm">{c.name}</div>
-                          <div className="text-xs text-slate-500">{formatPGK(c.unitPrice)} • Stock: {c.stock}</div>
+                          <div className="text-xs text-slate-500">{formatPGK(c.unitPrice)} • {c.itemType === 'Service' ? c.status : `Stock: ${c.stock}`}</div>
                         </div>
                         <button onClick={() => setCatModal({ open: true, data: c })} className="px-2.5 py-1 rounded bg-white border border-slate-300 text-xs font-bold">
                           Edit
@@ -1725,7 +1839,7 @@ function TunzAccessoriesSuite() {
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
               <div className="mb-4">
                 <h3 className="font-bold text-slate-900">Customer Uploaded Payment Proofs & Bank References</h3>
-                <p className="text-xs text-slate-500">Verify BSP transfer references & receipt slips to post into the ledger and upgrade invoices to Official Receipts.</p>
+                <p className="text-xs text-slate-500">Verify bank transfer references & receipt slips to post into the ledger and upgrade invoices to Official Receipts.</p>
               </div>
               {paymentSubmissions.length === 0 ? (
                 <p className="text-sm text-slate-500 py-8 text-center">No customer payment proofs uploaded yet.</p>
@@ -1793,69 +1907,121 @@ function TunzAccessoriesSuite() {
             </div>
           )}
 
+          {/* 4. TUNZ CARS FLEET & ADDITIONAL SERVICES CRUD */}
           {adminTab === 'cars' && (
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-3">
-                  <img src={TC_LOGO_URL} alt="Tunz Cars" className="w-11 h-11 rounded-lg object-contain border" />
-                  <div>
-                    <h3 className="font-bold text-slate-900">Tunz Cars — PNG Fleet Registry, Regions & Rates</h3>
-                    <p className="text-xs text-slate-500">Assign vehicles across NGI, Southern, Momase & Highlands towns and adjust daily PGK rates.</p>
+            <div className="space-y-6">
+              {/* Fleet Registry */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-3">
+                    <img src={settings.tcLogoUrl || DEFAULT_TC_LOGO} alt="Tunz Cars" className="w-11 h-11 rounded-lg object-contain border" />
+                    <div>
+                      <h3 className="font-bold text-slate-900">Tunz Cars — PNG Fleet Registry, Regions & Rates</h3>
+                      <p className="text-xs text-slate-500">Assign vehicles across NGI, Southern, Momase & Highlands towns and adjust daily PGK rates.</p>
+                    </div>
                   </div>
+                  <button onClick={() => setVehModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
+                    <Plus className="w-4 h-4" /> Add Vehicle
+                  </button>
                 </div>
-                <button onClick={() => setVehModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
-                  <Plus className="w-4 h-4" /> Add Vehicle
-                </button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-100 text-xs uppercase text-slate-600">
-                    <tr>
-                      <th className="p-3">ID / Plate</th>
-                      <th className="p-3">Vehicle</th>
-                      <th className="p-3">PNG Region & Town</th>
-                      <th className="p-3">Daily Rate</th>
-                      <th className="p-3">Odometer / Service</th>
-                      <th className="p-3">Status</th>
-                      <th className="p-3 text-right">Controls</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {vehicles.map(v => (
-                      <tr key={v.id}>
-                        <td className="p-3 font-mono text-xs font-bold">{v.id} ({v.plate})</td>
-                        <td className="p-3">
-                          <div className="font-bold">{v.name}</div>
-                          <div className="text-xs text-slate-500">{v.seats}</div>
-                        </td>
-                        <td className="p-3 text-xs">
-                          <div className="font-bold text-[#9A7B3E]">{v.town || 'Kavieng'}</div>
-                          <div className="text-slate-500">{v.region || 'New Guinea Islands (NGI)'}</div>
-                        </td>
-                        <td className="p-3 font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</td>
-                        <td className="p-3 text-xs">{Number(v.odometer).toLocaleString()} / {Number(v.nextServiceKm).toLocaleString()} km</td>
-                        <td className="p-3"><span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100">{v.status}</span></td>
-                        <td className="p-3 text-right space-x-2">
-                          <button onClick={() => setVehModal({ open: true, data: v })} className="p-1.5 rounded bg-blue-50 text-blue-700"><Edit2 className="w-4 h-4" /></button>
-                          <button onClick={() => setDeleteConfirm({ col: 'vehicles', id: v.id, name: v.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                      <tr>
+                        <th className="p-3">ID / Plate</th>
+                        <th className="p-3">Vehicle</th>
+                        <th className="p-3">PNG Region & Town</th>
+                        <th className="p-3">Daily Rate</th>
+                        <th className="p-3">Odometer / Service</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-right">Controls</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {vehicles.map(v => (
+                        <tr key={v.id}>
+                          <td className="p-3 font-mono text-xs font-bold">{v.id} ({v.plate})</td>
+                          <td className="p-3">
+                            <div className="font-bold">{v.name}</div>
+                            <div className="text-xs text-slate-500">{v.seats}</div>
+                          </td>
+                          <td className="p-3 text-xs">
+                            <div className="font-bold text-[#9A7B3E]">{v.town || 'Kavieng'}</div>
+                            <div className="text-slate-500">{v.region || 'New Guinea Islands (NGI)'}</div>
+                          </td>
+                          <td className="p-3 font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</td>
+                          <td className="p-3 text-xs">{Number(v.odometer).toLocaleString()} / {Number(v.nextServiceKm).toLocaleString()} km</td>
+                          <td className="p-3"><span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100">{v.status}</span></td>
+                          <td className="p-3 text-right space-x-2">
+                            <button onClick={() => setVehModal({ open: true, data: v })} className="p-1.5 rounded bg-blue-50 text-blue-700"><Edit2 className="w-4 h-4" /></button>
+                            <button onClick={() => setDeleteConfirm({ col: 'vehicles', id: v.id, name: v.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Dynamic Tunz Cars Additional Services Manager */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="font-bold text-slate-900">Tunz Cars — Additional Service Modes (Hire, Chauffeurs, Parcels, Airport Transfers)</h3>
+                    <p className="text-xs text-slate-500">Add, edit, or toggle transport service options that customers see on the booking page.</p>
+                  </div>
+                  <button onClick={() => setSrvModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold flex items-center gap-1.5">
+                    <Plus className="w-4 h-4" /> Add Transport Service
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                      <tr>
+                        <th className="p-3">Service Title</th>
+                        <th className="p-3">Pricing Rule</th>
+                        <th className="p-3">Rate / Surcharge</th>
+                        <th className="p-3">Licence Required</th>
+                        <th className="p-3 text-right">Controls</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {carServices.map(s => (
+                        <tr key={s.id}>
+                          <td className="p-3">
+                            <div className="font-bold">{s.title}</div>
+                            <div className="text-xs text-slate-500">{s.description}</div>
+                          </td>
+                          <td className="p-3 text-xs font-semibold">
+                            {s.pricingMode === 'flat_trip' ? 'Flat Trip Rate' : 'Vehicle Daily Rate + Surcharge'}
+                          </td>
+                          <td className="p-3 font-extrabold text-[#162238]">
+                            {s.pricingMode === 'flat_trip' ? `${formatPGK(s.rate)} / trip` : `+${formatPGK(s.rate)} / day`}
+                          </td>
+                          <td className="p-3 text-xs">{s.requiresLicense ? 'Yes (Self-Drive)' : 'No'}</td>
+                          <td className="p-3 text-right space-x-2">
+                            <button onClick={() => setSrvModal({ open: true, data: s })} className="p-1.5 rounded bg-blue-50 text-blue-700"><Edit2 className="w-4 h-4" /></button>
+                            <button onClick={() => setDeleteConfirm({ col: 'car_services', id: s.id, name: s.title })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
+          {/* 5. ORGANICS & TECH CATALOG (PRODUCTS & SERVICES CRUD) */}
           {adminTab === 'catalog' && (
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch Product Catalog</h3>
-                  <p className="text-xs text-slate-500">Manage soap SKUs, resort amenity boxes, refurbished laptops & custom apparel.</p>
+                  <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch — Products & Services Manager</h3>
+                  <p className="text-xs text-slate-500">Add, edit, or delete physical products and services under Tunz Organics or Tech & Merch.</p>
                 </div>
                 <button onClick={() => setCatModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold flex items-center gap-1.5">
-                  <Plus className="w-4 h-4" /> Add Product / SKU
+                  <Plus className="w-4 h-4" /> Add Product or Service
                 </button>
               </div>
               <div className="overflow-x-auto">
@@ -1863,9 +2029,10 @@ function TunzAccessoriesSuite() {
                   <thead className="bg-slate-100 text-xs uppercase text-slate-600">
                     <tr>
                       <th className="p-3">SKU / Division</th>
-                      <th className="p-3">Product Name</th>
+                      <th className="p-3">Type</th>
+                      <th className="p-3">Product / Service Name</th>
                       <th className="p-3">Unit Price (PGK)</th>
-                      <th className="p-3">Stock</th>
+                      <th className="p-3">Stock / Status</th>
                       <th className="p-3 text-right">Controls</th>
                     </tr>
                   </thead>
@@ -1877,11 +2044,18 @@ function TunzAccessoriesSuite() {
                           <span className="text-[11px] font-bold text-[#9A7B3E]">{c.division}</span>
                         </td>
                         <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                            c.itemType === 'Service' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {c.itemType || 'Product'}
+                          </span>
+                        </td>
+                        <td className="p-3">
                           <div className="font-bold">{c.name}</div>
                           <div className="text-xs text-slate-500">{c.unit}</div>
                         </td>
                         <td className="p-3 font-extrabold">{formatPGK(c.unitPrice)}</td>
-                        <td className="p-3 text-xs font-bold">{c.stock} ({c.status})</td>
+                        <td className="p-3 text-xs font-bold">{c.itemType === 'Service' ? c.status : `${c.stock} (${c.status})`}</td>
                         <td className="p-3 text-right space-x-2">
                           <button onClick={() => setCatModal({ open: true, data: c })} className="p-1.5 rounded bg-blue-50 text-blue-700"><Edit2 className="w-4 h-4" /></button>
                           <button onClick={() => setDeleteConfirm({ col: 'catalog', id: c.id, name: c.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
@@ -1963,8 +2137,8 @@ function TunzAccessoriesSuite() {
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h3 className="font-bold text-slate-900">Group Payments & BSP Transfer Ledger</h3>
-                  <p className="text-xs text-slate-500">BSP Account: Barrie Tunz Jr Abel • 1001252316</p>
+                  <h3 className="font-bold text-slate-900">Group Payments & Bank Transfer Ledger</h3>
+                  <p className="text-xs text-slate-500">Account: {settings.accountName} • {settings.accountNumber}</p>
                 </div>
                 <button onClick={() => setPayModal(true)} className="px-4 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5">
                   <Plus className="w-4 h-4" /> Record Manual Payment
@@ -2034,6 +2208,205 @@ function TunzAccessoriesSuite() {
               </table>
             </div>
           )}
+
+          {/* 9. SITE, WHATSAPP, LOGOS & BANKING LIVE SETTINGS */}
+          {adminTab === 'settings' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm max-w-4xl">
+              <div className="mb-6">
+                <h3 className="text-lg font-extrabold text-[#162238]">Site, Official WhatsApp, Logos & Banking Settings</h3>
+                <p className="text-xs text-slate-500">Update your official WhatsApp number, email, banking details, Owner PIN, or upload new logos directly inside the app.</p>
+              </div>
+
+              {settingsSavedBanner && (
+                <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4" /> All business settings, WhatsApp links, and logos updated live across the site!
+                </div>
+              )}
+
+              <form onSubmit={handleSaveSettings} className="space-y-6">
+                {/* Official Contact & WhatsApp */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <h4 className="font-bold text-sm text-[#162238]">1. Official WhatsApp & Business Contact</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Display Phone Number *</label>
+                      <input
+                        type="text"
+                        required
+                        value={settings.phoneDisplay}
+                        onChange={e => setSettings({ ...settings, phoneDisplay: e.target.value })}
+                        placeholder="+675 7962 5068"
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">WhatsApp Digits (Country Code + #) *</label>
+                      <input
+                        type="text"
+                        required
+                        value={settings.whatsappNumber}
+                        onChange={e => setSettings({ ...settings, whatsappNumber: e.target.value })}
+                        placeholder="67579625068"
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Official Email *</label>
+                      <input
+                        type="email"
+                        required
+                        value={settings.email}
+                        onChange={e => setSettings({ ...settings, email: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Holding Branding & Security */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <h4 className="font-bold text-sm text-[#162238]">2. Holding Title, Registrations & Owner PIN</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Main Holding Title</label>
+                      <input
+                        type="text"
+                        value={settings.companyName}
+                        onChange={e => setSettings({ ...settings, companyName: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">IPA Reg #</label>
+                      <input
+                        type="text"
+                        value={settings.ipaNumber}
+                        onChange={e => setSettings({ ...settings, ipaNumber: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">IRC TIN #</label>
+                      <input
+                        type="text"
+                        value={settings.tinNumber}
+                        onChange={e => setSettings({ ...settings, tinNumber: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Owner Admin PIN</label>
+                      <input
+                        type="text"
+                        value={settings.adminPin}
+                        onChange={e => setSettings({ ...settings, adminPin: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono bg-white font-bold"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Storefront Welcome Description</label>
+                    <input
+                      type="text"
+                      value={settings.heroDescription}
+                      onChange={e => setSettings({ ...settings, heroDescription: e.target.value })}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Banking Details */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <h4 className="font-bold text-sm text-[#162238]">3. Settlement Bank Account (Shown on Payment Portal & Invoices)</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Bank & Branch</label>
+                      <input
+                        type="text"
+                        value={settings.bankName}
+                        onChange={e => setSettings({ ...settings, bankName: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Account Name</label>
+                      <input
+                        type="text"
+                        value={settings.accountName}
+                        onChange={e => setSettings({ ...settings, accountName: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Account Number</label>
+                      <input
+                        type="text"
+                        value={settings.accountNumber}
+                        onChange={e => setSettings({ ...settings, accountNumber: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono bg-white font-bold"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct Logo Uploaders (No GitHub upload needed!) */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <h4 className="font-bold text-sm text-[#162238]">4. Direct Logo Upload (Instant Cloud Sync)</h4>
+                  <p className="text-xs text-slate-500">Upload your Tunz Accessories and Tunz Cars logos straight from your computer here.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex items-center gap-4">
+                      <img src={settings.taLogoUrl || DEFAULT_TA_LOGO} alt="TA Logo" className="w-16 h-16 object-contain border rounded-lg p-1" />
+                      <div className="flex-1">
+                        <div className="text-xs font-bold text-slate-800 mb-1">Tunz Accessories Holding Logo</div>
+                        <label className="inline-block px-3 py-1.5 rounded-lg bg-[#162238] text-white text-xs font-bold cursor-pointer hover:bg-slate-800">
+                          Upload Logo Image
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const dataUrl = await compressImageFile(file, 500);
+                              setSettings(prev => ({ ...prev, taLogoUrl: dataUrl }));
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex items-center gap-4">
+                      <img src={settings.tcLogoUrl || DEFAULT_TC_LOGO} alt="TC Logo" className="w-16 h-16 object-contain border rounded-lg p-1" />
+                      <div className="flex-1">
+                        <div className="text-xs font-bold text-slate-800 mb-1">Tunz Cars Subsidiary Logo</div>
+                        <label className="inline-block px-3 py-1.5 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold cursor-pointer hover:opacity-90">
+                          Upload Logo Image
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const dataUrl = await compressImageFile(file, 500);
+                              setSettings(prev => ({ ...prev, tcLogoUrl: dataUrl }));
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="px-6 py-3 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow transition"
+                >
+                  Save All Settings Live
+                </button>
+              </form>
+            </div>
+          )}
         </main>
       )}
 
@@ -2069,12 +2442,12 @@ function TunzAccessoriesSuite() {
       {showPinModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <form onSubmit={handlePinUnlock} className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
-            <h3 className="text-lg font-bold text-[#162238] mb-1">Tunz Accessories Owner Login</h3>
-            <p className="text-xs text-slate-500 mb-4">Enter Owner PIN (2026) to manage all divisions.</p>
+            <h3 className="text-lg font-bold text-[#162238] mb-1">{settings.companyName} Owner Login</h3>
+            <p className="text-xs text-slate-500 mb-4">Enter Owner PIN to manage all divisions & settings.</p>
             <input
               type="password"
               autoFocus
-              placeholder="PIN (2026)"
+              placeholder="Enter PIN"
               value={pinInput}
               onChange={(e) => setPinInput(e.target.value)}
               className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-center text-lg font-bold tracking-widest mb-2"
@@ -2088,9 +2461,12 @@ function TunzAccessoriesSuite() {
         </div>
       )}
 
-      {/* VEHICLE ADD/EDIT MODAL WITH 4 PNG REGIONS & TOWNS */}
       {vehModal.open && (
         <VehicleModal initial={vehModal.data} onClose={() => setVehModal({ open: false, data: null })} onSave={saveVehicle} />
+      )}
+
+      {srvModal.open && (
+        <CarServiceModal initial={srvModal.data} onClose={() => setSrvModal({ open: false, data: null })} onSave={saveCarService} />
       )}
 
       {catModal.open && (
@@ -2107,6 +2483,7 @@ function TunzAccessoriesSuite() {
               <button
                 onClick={async () => {
                   if (deleteConfirm.col === 'vehicles') setVehicles(p => p.filter(x => x.id !== deleteConfirm.id));
+                  if (deleteConfirm.col === 'car_services') setCarServices(p => p.filter(x => x.id !== deleteConfirm.id));
                   if (deleteConfirm.col === 'catalog') setCatalog(p => p.filter(x => x.id !== deleteConfirm.id));
                   await deleteCloud(deleteConfirm.col, deleteConfirm.id);
                   setDeleteConfirm(null);
@@ -2132,7 +2509,7 @@ function TunzAccessoriesSuite() {
         <ExpenseModal onClose={() => setExpModal(false)} onSave={logExpense} />
       )}
 
-      {/* A4 CORPORATE DOCUMENT PREVIEW WITH DIVISION-SPECIFIC LOGO */}
+      {/* A4 CORPORATE DOCUMENT PREVIEW */}
       {previewDoc && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl max-w-3xl w-full p-8 shadow-2xl my-8">
@@ -2150,21 +2527,21 @@ function TunzAccessoriesSuite() {
               <div className="flex justify-between items-start border-b-2 border-[#9E2A2B] pb-4 gap-4">
                 <div className="flex items-center gap-4">
                   <img
-                    src={previewDoc.division === 'Tunz Cars' ? TC_LOGO_URL : TA_LOGO_URL}
+                    src={previewDoc.division === 'Tunz Cars' ? (settings.tcLogoUrl || DEFAULT_TC_LOGO) : (settings.taLogoUrl || DEFAULT_TA_LOGO)}
                     alt={previewDoc.division === 'Tunz Cars' ? 'Tunz Cars Logo' : 'Tunz Accessories Logo'}
                     className="h-20 w-auto object-contain shrink-0"
                   />
                   <div>
-                    <h2 className="text-2xl font-extrabold text-[#162238]">
-                      {previewDoc.division === 'Tunz Cars' ? 'TUNZ CARS' : 'TUNZ ACCESSORIES'}
+                    <h2 className="text-2xl font-extrabold text-[#162238] uppercase">
+                      {previewDoc.division === 'Tunz Cars' ? 'TUNZ CARS' : settings.companyName}
                     </h2>
                     <p className="text-xs font-bold text-[#9A7B3E]">
                       {previewDoc.division === 'Tunz Cars'
-                        ? 'A Subsidiary of Tunz Accessories'
+                        ? `A Subsidiary of ${settings.companyName}`
                         : `Operating Division: ${previewDoc.division}`}
                     </p>
-                    <p className="text-xs text-slate-600 mt-1">Phone: +675 7962 5068 • Email: tuneabel@gmail.com</p>
-                    <p className="text-xs text-slate-600">IPA Reg #: 6-136546287 • IRC TIN: 501982530</p>
+                    <p className="text-xs text-slate-600 mt-1">Phone / WhatsApp: {settings.phoneDisplay} • Email: {settings.email}</p>
+                    <p className="text-xs text-slate-600">IPA Reg #: {settings.ipaNumber} • IRC TIN: {settings.tinNumber}</p>
                   </div>
                 </div>
                 <div className="text-right shrink-0">
@@ -2209,8 +2586,8 @@ function TunzAccessoriesSuite() {
               <div className="flex justify-between items-start gap-6">
                 <div className="bg-slate-50 p-3.5 rounded-lg border-l-4 border-[#9E2A2B] text-xs space-y-1 flex-1">
                   <p className="font-bold text-[#9E2A2B]">OFFICIAL BANKING DETAILS</p>
-                  <p><strong>Account Name:</strong> Barrie Tunz Jr Abel</p>
-                  <p><strong>Bank & Acc #:</strong> BSP Kavieng — 1001252316</p>
+                  <p><strong>Account Name:</strong> {settings.accountName}</p>
+                  <p><strong>Bank & Acc #:</strong> {settings.bankName} — {settings.accountNumber}</p>
                   {previewDoc.type === 'Official Receipt' && (
                     <p className="pt-1 font-semibold text-slate-800">Amount in Words: {numberToWordsPGK(previewDoc.totalAmount)}</p>
                   )}
@@ -2273,7 +2650,6 @@ function VehicleModal({ initial, onClose, onSave }) {
           </div>
         </div>
 
-        {/* PNG 4 REGIONS & TOWNS SELECTOR */}
         <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
           <div>
             <label className="block text-xs font-bold text-[#162238] mb-1">PNG Region *</label>
@@ -2337,20 +2713,94 @@ function VehicleModal({ initial, onClose, onSave }) {
   );
 }
 
+function CarServiceModal({ initial, onClose, onSave }) {
+  const [form, setForm] = useState(
+    initial || {
+      title: '',
+      pricingMode: 'flat_trip',
+      rate: 100,
+      badge: 'Airport Transfer',
+      description: '',
+      requiresLicense: false,
+      active: true
+    }
+  );
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-md w-full space-y-3 shadow-xl">
+        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Transport Service' : 'Add Tunz Cars Service Mode'}</h3>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Service Name *</label>
+          <input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g., Airport VIP Transfer" className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Pricing Rule</label>
+            <select value={form.pricingMode} onChange={e => setForm({ ...form, pricingMode: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-xs font-semibold">
+              <option value="flat_trip">Flat Trip Rate (One-Off)</option>
+              <option value="per_day">Vehicle Daily Rate + Surcharge/Day</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Rate / Surcharge (PGK)</label>
+            <input type="number" required value={form.rate} onChange={e => setForm({ ...form, rate: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Badge Label</label>
+            <input value={form.badge} onChange={e => setForm({ ...form, badge: e.target.value })} placeholder="e.g., Fixed Fare" className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div className="flex items-center pt-5">
+            <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+              <input type="checkbox" checked={form.requiresLicense} onChange={e => setForm({ ...form, requiresLicense: e.target.checked })} />
+              Require Driver Licence #
+            </label>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Customer Description</label>
+          <input required value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Short explanation shown to clients" className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold">Save Service</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function CatalogModal({ initial, onClose, onSave }) {
   const [form, setForm] = useState(
-    initial || { division: 'Tunz Organics', name: '', unit: 'Per Unit', unitPrice: 15, stock: 50, status: 'In Stock', description: '' }
+    initial || {
+      division: 'Tech & Merch',
+      itemType: 'Product',
+      name: '',
+      unit: 'Per Unit',
+      unitPrice: 100,
+      stock: 20,
+      status: 'In Stock',
+      description: ''
+    }
   );
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl">
-        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Catalog SKU' : 'Add Product / Service SKU'}</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Product / Service' : 'Add Product or Service'}</h3>
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Division</label>
-            <select value={form.division} onChange={e => setForm({ ...form, division: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <select value={form.division} onChange={e => setForm({ ...form, division: e.target.value })} className="w-full border rounded-lg px-2.5 py-2 text-xs font-semibold">
               <option>Tunz Organics</option>
               <option>Tech & Merch</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Item Type</label>
+            <select value={form.itemType} onChange={e => setForm({ ...form, itemType: e.target.value })} className="w-full border rounded-lg px-2.5 py-2 text-xs font-semibold">
+              <option value="Product">Product</option>
+              <option value="Service">Service</option>
             </select>
           </div>
           <div>
@@ -2359,17 +2809,26 @@ function CatalogModal({ initial, onClose, onSave }) {
           </div>
         </div>
         <div>
-          <label className="block text-xs font-semibold mb-1">Product / Package Name *</label>
-          <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <label className="block text-xs font-semibold mb-1">Product or Service Name *</label>
+          <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g., Custom Branded Caps / Laptop Repair" className="w-full border rounded-lg px-3 py-2 text-sm" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Unit Label</label>
-            <input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+            <input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} placeholder="Per Unit / Per Job" className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="block text-xs font-semibold mb-1">Stock Qty</label>
             <input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Availability Status</label>
+            <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="w-full border rounded-lg px-2.5 py-2 text-xs font-semibold">
+              <option>In Stock</option>
+              <option>Available</option>
+              <option>Made to Order</option>
+              <option>Out of Stock</option>
+            </select>
           </div>
         </div>
         <div>
@@ -2378,7 +2837,7 @@ function CatalogModal({ initial, onClose, onSave }) {
         </div>
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
-          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold">Save SKU</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold">Save Item</button>
         </div>
       </form>
     </div>
