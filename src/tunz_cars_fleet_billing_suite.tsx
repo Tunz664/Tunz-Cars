@@ -1,1225 +1,1018 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Car,
-  FileText,
-  CreditCard,
-  Fuel,
-  LayoutDashboard,
-  Plus,
-  Search,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  Wrench,
-  AlertTriangle,
-  Printer,
-  ArrowRight,
-  Download,
-  RotateCcw,
-  X,
-  Phone,
-  Mail,
-  MapPin,
-  Building2,
-  Receipt,
-  DollarSign,
-  TrendingUp,
-  Gauge,
-  ShieldCheck,
-  Filter,
-  Edit3,
-  Trash2,
-  Check,
-  ChevronRight
+  Car, Calendar, FileText, CreditCard, Fuel, Wrench, ShieldCheck,
+  Plus, Edit2, Trash2, CheckCircle, Clock, AlertTriangle, Printer,
+  Download, Search, Lock, Unlock, Phone, Mail, MapPin, DollarSign,
+  TrendingUp, Users, ArrowRight, X, Check, Building2, Eye, Send,
+  Sparkles, Package, Laptop, ShoppingBag, Layers, Briefcase, Upload, Image as ImageIcon, Copy
 } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import {
+  getFirestore, collection, doc, setDoc, deleteDoc,
+  onSnapshot, query
+} from 'firebase/firestore';
 
-// ============================================================================
-// BRAND & BUSINESS CONSTANTS (TUNZ CARS — A SUBSIDIARY OF TUNZ ACCESSORIES)
-// ============================================================================
-const COMPANY_INFO = {
-  name: 'Tunz Cars',
-  parent: 'A Subsidiary of Tunz Accessories',
-  ipaReg: '6-136546287',
-  ircTin: '501982530',
-  bspAccount: '1001252316',
-  bspBranch: 'BSP Kavieng Branch',
-  accountName: 'Barrie Tunz Jr Abel',
-  principal: 'Barrie Tunz Jr Abel',
-  phone: '+675 7962 5068',
-  email: 'tuneabel@gmail.com',
-  locations: 'Kavieng (New Ireland Province) & Port Moresby, PNG',
-  currency: 'PGK'
+// Pre-configured with live Tunz-Cars-PNG Firebase credentials
+const YOUR_FIREBASE_CONFIG_HERE = {
+  apiKey: "AIzaSyC0wEzGuwJ7D7Kg6pI8kYuZ4S6zBkX_gdo",
+  authDomain: "tunz-cars-png.firebaseapp.com",
+  projectId: "tunz-cars-png",
+  storageBucket: "tunz-cars-png.firebasestorage.app",
+  messagingSenderId: "733661606615",
+  appId: "1:733661606615:web:6d8fc8d47d477f565557692"
 };
 
-// ============================================================================
-// INITIAL REALISTIC KAVIENG FLEET & OPERATIONS DATA
-// ============================================================================
-const INITIAL_VEHICLES = [
+const app = initializeApp(YOUR_FIREBASE_CONFIG_HERE);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const APP_ID = 'tunz-accessories-group-prod';
+
+const INITIAL_FLEET = [
   {
     id: 'TC-VEH-01',
-    makeModel: '2013 Subaru XV AWD',
+    name: '2013 Subaru XV AWD',
     plate: 'KVG-412',
-    color: 'Obsidian Black',
-    category: '5-Seater AWD SUV',
-    dailyRate: 250.0,
-    odometer: 149250,
-    nextServiceOdo: 154000,
-    regoExpiry: '2027-03-15',
-    insuranceExpiry: '2027-03-15',
+    category: 'SUV / AWD',
+    seats: '5 Seats • Auto • AWD',
+    dailyRate: 250,
     status: 'Available',
-    fuelType: 'Petrol',
-    notes: 'Primary institutional & airport AWD SUV. Roof racks installed.'
+    odometer: 149250,
+    nextServiceKm: 152000,
+    regoExpiry: '2027-04-30',
+    mvilExpiry: '2027-04-30',
+    highlights: 'All-Wheel Drive, High Ground Clearance, Cold A/C — Ideal for Kavieng & Boluminski Highway'
   },
   {
     id: 'TC-VEH-02',
-    makeModel: '2012 Nissan Bluebird Sylphy',
+    name: '2012 Nissan Bluebird Sylphy',
     plate: 'KVG-789',
-    color: 'Metallic Silver',
     category: 'Executive Sedan',
-    dailyRate: 220.0,
+    seats: '5 Seats • Auto • 2WD',
+    dailyRate: 220,
+    status: 'Available',
     odometer: 118500,
-    nextServiceOdo: 123000,
-    regoExpiry: '2027-01-20',
-    insuranceExpiry: '2027-01-20',
-    status: 'On Hire',
-    fuelType: 'Petrol',
-    notes: 'Fuel-efficient town & hospital executive transport.'
+    nextServiceKm: 120000,
+    regoExpiry: '2027-03-15',
+    mvilExpiry: '2027-03-15',
+    highlights: 'Fuel-Efficient Executive Sedan, Smooth Ride — Ideal for Kavieng Town & Airport Transfers'
   },
   {
     id: 'TC-VEH-03',
-    makeModel: '1996 Isuzu Bighorn Station Wagon',
+    name: '1996 Isuzu Bighorn Station Wagon',
     plate: 'KVG-195',
-    color: 'Polar White',
-    category: '7-Seater 4WD Wagon',
-    dailyRate: 250.0,
+    category: '4WD Station Wagon',
+    seats: '7 Seats • Auto • 4WD',
+    dailyRate: 250,
+    status: 'Available',
     odometer: 214000,
-    nextServiceOdo: 215000,
-    regoExpiry: '2026-12-10',
-    insuranceExpiry: '2026-12-10',
-    status: 'Maintenance',
-    fuelType: 'Diesel',
-    notes: 'Heavy-duty Boluminski Highway & outer patrol 4WD. Routine 215k service in progress.'
+    nextServiceKm: 218000,
+    regoExpiry: '2027-02-28',
+    mvilExpiry: '2027-02-28',
+    highlights: 'Heavy-Duty 4x4, 7-Seater Capacity — Built for Rural Outreach & Rough Provincial Roads'
   }
 ];
 
-const INITIAL_BILLING_DOCS = [
+const INITIAL_CATALOG = [
   {
-    id: 'TC-RCT-2026-001',
-    docType: 'Receipt',
-    quoteRef: 'TC-QT-2026-001',
-    proformaRef: 'TC-PI-2026-001',
-    vraRef: 'TC-VRA-2026-001',
-    date: '2026-11-10',
-    validUntil: '2026-12-10',
-    clientName: 'Kavieng General Hospital (PHA)',
-    contactPerson: 'Dr. Michael Kila — Visiting Specialist Coordinator',
-    clientPhone: '+675 984 2040',
-    clientEmail: 'admin@kaviengpha.gov.pg',
-    vehicleId: 'TC-VEH-01',
-    hireType: 'Self-Drive',
-    startDate: '2026-11-10',
-    endDate: '2026-11-15',
-    days: 5,
-    dailyRate: 250.0,
-    extraFees: 50.0,
-    extraDesc: 'Kavieng Airport Return Pickup & Drop-off',
-    bondAmount: 0,
-    status: 'Paid',
-    paymentMethod: 'BSP Transfer',
-    notes: '5-day visiting medical team transport in Kavieng Town.'
+    id: 'TA-ORG-01',
+    division: 'Tunz Organics',
+    name: 'Cold-Process Virgin Coconut Oil Soap (110g)',
+    unit: 'Per Bar / 24-Bar Eco-Resort Box',
+    unitPrice: 15,
+    stock: 180,
+    status: 'In Stock',
+    description: 'Handcrafted cold-process organic coconut oil soap formulated for eco-resorts, lodges, and retail.'
   },
   {
-    id: 'TC-PI-2026-002',
-    docType: 'Proforma',
-    quoteRef: 'TC-QT-2026-002',
-    proformaRef: 'TC-PI-2026-002',
-    vraRef: 'TC-VRA-2026-002',
-    date: '2026-11-16',
-    validUntil: '2026-12-16',
-    clientName: 'Joelee Thomas',
-    contactPerson: 'Joelee Thomas (Private Executive Hire)',
-    clientPhone: '+675 7241 8810',
-    clientEmail: 'joelee.thomas@gmail.com',
-    vehicleId: 'TC-VEH-02',
-    hireType: 'Self-Drive',
-    startDate: '2026-11-17',
-    endDate: '2026-11-21',
-    days: 4,
-    dailyRate: 220.0,
-    extraFees: 0.0,
-    extraDesc: '',
-    bondAmount: 300.0,
-    status: 'Part-Paid',
-    paymentMethod: 'BSP Transfer',
-    notes: 'Deposit K500 received via BSP; balance K380 + K300 bond due on return.'
+    id: 'TA-ORG-02',
+    division: 'Tunz Organics',
+    name: 'Eco-Resort Hospitality Amenity Pack (50 Bars)',
+    unit: 'Wholesale Carton',
+    unitPrice: 650,
+    stock: 25,
+    status: 'In Stock',
+    description: 'Custom-stamped organic coconut oil guest bars tailored for boutique resorts in New Ireland & PNG.'
   },
   {
-    id: 'TC-QT-2026-003',
-    docType: 'Quote',
-    quoteRef: 'TC-QT-2026-003',
-    proformaRef: '',
-    vraRef: '',
-    date: '2026-11-18',
-    validUntil: '2026-12-18',
-    clientName: 'Murat Local Level Government (LLG)',
-    contactPerson: 'Hon. Ward Council & LLG Manager',
-    clientPhone: '+675 7910 3342',
-    clientEmail: 'muratllg.nip@gmail.com',
-    vehicleId: 'TC-VEH-01',
-    hireType: 'Chauffeur-Driven',
-    startDate: '2026-11-24',
-    endDate: '2026-12-01',
-    days: 7,
-    dailyRate: 250.0,
-    extraFees: 150.0,
-    extraDesc: 'Kavieng Wharf & Airport Coordination Transfer',
-    bondAmount: 0,
-    status: 'Pending',
-    paymentMethod: 'BSP Transfer',
-    notes: '7-day official LLG administration transport while delegation is in Kavieng.'
+    id: 'TA-TECH-01',
+    division: 'Tech & Merch',
+    name: 'Enterprise Refurbished Laptop Package (Dell Latitude / HP)',
+    unit: 'Per Unit (Configured)',
+    unitPrice: 2450,
+    stock: 8,
+    status: 'In Stock',
+    description: 'Business-grade Core i5/i7 laptops pre-configured with Office & institutional software for schools & offices.'
   },
   {
-    id: 'TC-RCT-2026-002',
-    docType: 'Receipt',
-    quoteRef: 'TC-QT-2026-000',
-    proformaRef: 'TC-PI-2026-000',
-    vraRef: 'TC-VRA-2026-000',
-    date: '2026-11-02',
-    validUntil: '2026-12-02',
-    clientName: 'New Ireland Provincial Works & Health Audit Team',
-    contactPerson: 'Sarah Boas — Field Logistics Officer',
-    clientPhone: '+675 7188 4920',
-    clientEmail: 'sboas.audit@png.gov.pg',
-    vehicleId: 'TC-VEH-03',
-    hireType: 'Self-Drive',
-    startDate: '2026-11-02',
-    endDate: '2026-11-06',
-    days: 4,
-    dailyRate: 250.0,
-    extraFees: 0.0,
-    extraDesc: '',
-    bondAmount: 0,
-    status: 'Paid',
-    paymentMethod: 'EFTPOS',
-    notes: 'Boluminski Highway field inspection run.'
+    id: 'TA-TECH-02',
+    division: 'Tech & Merch',
+    name: 'Custom Branded Corporate Polo & Event Apparel',
+    unit: 'Minimum 20 Units (Per Shirt)',
+    unitPrice: 65,
+    stock: 250,
+    status: 'Made to Order',
+    description: 'Custom embroidered and sublimated uniforms, event shirts, and promotional merchandise across PNG.'
   }
 ];
 
-const INITIAL_PAYMENTS = [
+const INITIAL_DOCS = [
   {
-    id: 'PAY-2026-001',
-    date: '2026-11-10',
-    docRef: 'TC-RCT-2026-001',
-    clientName: 'Kavieng General Hospital (PHA)',
-    vehicleId: 'TC-VEH-01',
-    amountPaid: 1300.0,
-    bondCollected: 0.0,
-    method: 'BSP Transfer',
-    accountDeposited: 'BSP Acc # 1001252316',
-    referenceNo: 'BSP-TXN-884910',
-    status: 'Paid'
-  },
-  {
-    id: 'PAY-2026-002',
-    date: '2026-11-17',
-    docRef: 'TC-PI-2026-002',
-    clientName: 'Joelee Thomas',
-    vehicleId: 'TC-VEH-02',
-    amountPaid: 500.0,
-    bondCollected: 300.0,
-    method: 'BSP Transfer',
-    accountDeposited: 'BSP Acc # 1001252316',
-    referenceNo: 'BSP-TXN-890124',
-    status: 'Part-Paid'
-  },
-  {
-    id: 'PAY-2026-003',
-    date: '2026-11-02',
-    docRef: 'TC-RCT-2026-002',
-    clientName: 'New Ireland Provincial Works & Health Audit Team',
-    vehicleId: 'TC-VEH-03',
-    amountPaid: 1000.0,
-    bondCollected: 0.0,
-    method: 'EFTPOS',
-    accountDeposited: 'BSP Acc # 1001252316',
-    referenceNo: 'EFT-KVG-4412',
-    status: 'Paid'
+    id: 'TA-QT-2026-001',
+    division: 'Tunz Cars',
+    type: 'Quotation',
+    status: 'Sent',
+    date: '2026-11-19',
+    clientName: 'Kavieng General Hospital',
+    clientContact: '+675 984 2040',
+    itemSummary: '2013 Subaru XV AWD (KVG-412)',
+    startDate: '2026-11-23',
+    endDate: '2026-11-27',
+    qty: 5,
+    unitLabel: 'Days',
+    unitRate: 250,
+    totalAmount: 1250,
+    paidAmount: 0,
+    notes: 'Official clinical outreach & hospital logistics transport (10% GST Inclusive)'
   }
 ];
 
-const INITIAL_EXPENSES = [
-  {
-    id: 'EXP-2026-001',
-    date: '2026-11-15',
-    vehicleId: 'TC-VEH-01',
-    category: 'Fuel',
-    vendor: 'Puma Energy Kavieng Service Station',
-    description: 'Full tank top-up post-hospital hire (42.5L @ K4.40/L)',
-    litres: 42.5,
-    odometer: 149250,
-    prevOdometer: 148780,
-    amount: 187.0,
-    receiptNo: 'PUMA-9921'
-  },
-  {
-    id: 'EXP-2026-002',
-    date: '2026-11-12',
-    vehicleId: 'TC-VEH-03',
-    category: 'Routine Service',
-    vendor: 'Kavieng Auto & Marine Workshop',
-    description: '15W-40 Diesel engine oil, oil filter, fuel filter & grease',
-    litres: 0,
-    odometer: 214000,
-    prevOdometer: 0,
-    amount: 485.0,
-    receiptNo: 'KAM-304'
-  },
-  {
-    id: 'EXP-2026-003',
-    date: '2026-11-08',
-    vehicleId: 'TC-VEH-02',
-    category: 'Tyres & Alignment',
-    vendor: 'Ela Motors Kavieng Parts',
-    description: 'Front wheel alignment, balancing & puncture repair',
-    litres: 0,
-    odometer: 118200,
-    prevOdometer: 0,
-    amount: 210.0,
-    receiptNo: 'ELA-7712'
-  },
-  {
-    id: 'EXP-2026-004',
-    date: '2026-11-01',
-    vehicleId: 'TC-VEH-01',
-    category: 'Rego & MVIL',
-    vendor: 'MVIL / Traffic Registry Kavieng',
-    description: 'Commercial Hire Third-Party MVIL & Safety Sticker Renewal',
-    litres: 0,
-    odometer: 148500,
-    prevOdometer: 0,
-    amount: 640.0,
-    receiptNo: 'MVIL-88201'
-  }
-];
-
-// ============================================================================
-// UTILITY FUNCTIONS (PGK FORMATTING, AMOUNT IN WORDS, CSV EXPORT)
-// ============================================================================
-const formatPGK = (val) => {
-  const num = Number(val) || 0;
-  return `K ${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
-
-const calcDocTotals = (doc) => {
-  const base = (Number(doc.days) || 0) * (Number(doc.dailyRate) || 0);
-  const gross = base + (Number(doc.extraFees) || 0);
-  const subtotalExcl = gross / 1.1;
-  const gst = gross - subtotalExcl;
-  return { base, gross, subtotalExcl, gst };
-};
+const formatPGK = (val) => `K ${Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const numberToWordsPGK = (amount) => {
-  const num = Math.floor(Number(amount) || 0);
-  const toea = Math.round(((Number(amount) || 0) - num) * 100);
-  if (num === 0) return 'Zero Kina Only';
-
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
-  const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const num = Math.floor(Number(amount || 0));
+  const toea = Math.round((Number(amount || 0) - num) * 100);
+  if (num === 0) return `Zero Kina and ${toea} Toea Only`;
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-  const convertHundreds = (n) => {
-    let str = '';
-    if (n >= 100) {
-      str += ones[Math.floor(n / 100)] + ' Hundred ';
-      n %= 100;
-    }
-    if (n >= 10 && n < 20) {
-      str += teens[n - 10] + ' ';
-    } else {
-      if (n >= 20) {
-        str += tens[Math.floor(n / 10)] + ' ';
-        n %= 10;
-      }
-      if (n > 0) {
-        str += ones[n] + ' ';
-      }
-    }
-    return str.trim();
+  const convertLessThanThousand = (n) => {
+    if (n === 0) return '';
+    if (n < 20) return ones[n];
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
+    return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + convertLessThanThousand(n % 100) : '');
   };
-
   let words = '';
-  if (num >= 1000) {
-    words += convertHundreds(Math.floor(num / 1000)) + ' Thousand ';
-    const rem = num % 1000;
-    if (rem > 0) words += convertHundreds(rem);
-  } else {
-    words = convertHundreds(num);
-  }
-
-  const toeaText = toea > 0 ? ` and ${toea}/100 Toea` : '';
-  return `${words.trim()} Kina${toeaText} Only`;
+  if (num >= 1000) words += convertLessThanThousand(Math.floor(num / 1000)) + ' Thousand ';
+  words += convertLessThanThousand(num % 1000);
+  return `${words.trim()} Kina${toea > 0 ? ` and ${toea} Toea` : ''} Only`;
 };
 
-const exportToCSV = (filename, rows) => {
-  if (!rows || !rows.length) return;
-  const headers = Object.keys(rows[0]);
-  const csvContent = [
-    headers.join(','),
-    ...rows.map((r) =>
-      headers
-        .map((h) => {
-          const val = r[h] === null || r[h] === undefined ? '' : String(r[h]).replace(/"/g, '""');
-          return `"${val}"`;
-        })
-        .join(',')
-    )
-  ].join('\n');
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
-// ============================================================================
-// CUSTOM SVG EMBLEM FOR TUNZ CARS (STEERING WHEEL + TC + WING IN NAVY/GOLD/RED)
-// ============================================================================
-const TunzCarsLogoSVG = ({ size = 48 }) => (
-  <svg width={size} height={size} viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
-    <defs>
-      <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#F3E5AB" />
-        <stop offset="50%" stopColor="#D4AF37" />
-        <stop offset="100%" stopColor="#8C6D23" />
-      </linearGradient>
-      <linearGradient id="navyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#2B3A52" />
-        <stop offset="100%" stopColor="#162238" />
-      </linearGradient>
-      <linearGradient id="crimsonGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stopColor="#9E2A2B" />
-        <stop offset="100%" stopColor="#D9534F" />
-      </linearGradient>
-    </defs>
-
-    {/* Outer Motion Arcs */}
-    <path d="M22 36 A 46 46 0 0 0 22 84" stroke="url(#crimsonGrad)" strokeWidth="3" strokeLinecap="round" />
-    <path d="M98 36 A 46 46 0 0 1 98 84" stroke="url(#crimsonGrad)" strokeWidth="3" strokeLinecap="round" />
-
-    {/* Steering Wheel Outer Rim */}
-    <circle cx="60" cy="60" r="38" stroke="url(#navyGrad)" strokeWidth="9" />
-    <circle cx="60" cy="60" r="38" stroke="url(#goldGrad)" strokeWidth="1.2" strokeDasharray="18 24" />
-
-    {/* Steering Wheel Spokes */}
-    <path d="M24 60 H42" stroke="url(#navyGrad)" strokeWidth="8" strokeLinecap="round" />
-    <path d="M60 78 V95" stroke="url(#navyGrad)" strokeWidth="8" strokeLinecap="round" />
-
-    {/* TC Brushed Gold Monogram */}
-    <text
-      x="34"
-      y="70"
-      fill="url(#goldGrad)"
-      fontFamily="Georgia, serif"
-      fontWeight="bold"
-      fontSize="36"
-      letterSpacing="-2"
-    >
-      TC
-    </text>
-
-    {/* Crimson & Gold Speed Wing Accent on Right */}
-    <path d="M84 54 Q 104 52 114 42 Q 102 58 84 60 Z" fill="url(#crimsonGrad)" />
-    <path d="M84 61 Q 102 60 110 53 Q 99 65 84 66 Z" fill="url(#goldGrad)" />
-    <path d="M84 67 Q 98 67 105 62 Q 96 71 84 71 Z" fill="url(#crimsonGrad)" />
-
-    {/* Gold Swoosh Tying T and C */}
-    <path
-      d="M18 72 C 32 86, 56 82, 65 64"
-      stroke="url(#goldGrad)"
-      strokeWidth="4.5"
-      strokeLinecap="round"
-      fill="none"
-    />
-  </svg>
-);
-
-// ============================================================================
-// STATUS BADGE HELPER
-// ============================================================================
-const StatusBadge = ({ status }) => {
-  const styles = {
-    Available: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    'On Hire': 'bg-amber-50 text-amber-800 border-amber-200',
-    Maintenance: 'bg-rose-50 text-rose-700 border-rose-200',
-    Reserved: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    Paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    'Part-Paid': 'bg-amber-50 text-amber-800 border-amber-200',
-    Pending: 'bg-slate-100 text-slate-700 border-slate-300',
-    Quote: 'bg-sky-50 text-sky-800 border-sky-200',
-    Proforma: 'bg-amber-50 text-amber-800 border-amber-200',
-    Receipt: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+const compressReceiptImage = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const maxW = 900;
+      const scale = img.width > maxW ? maxW / img.width : 1;
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.72));
+    };
+    img.onerror = reject;
+    img.src = ev.target.result;
   };
+  reader.onerror = reject;
+  reader.readAsDataURL(file);
+});
 
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-        styles[status] || 'bg-slate-100 text-slate-700 border-slate-200'
-      }`}
-    >
-      {status}
-    </span>
-  );
-};
+function TunzAccessoriesSuite() {
+  const [user, setUser] = useState(null);
+  const [mode, setMode] = useState('public');
+  const [publicTab, setPublicTab] = useState('cars');
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [copiedAcc, setCopiedAcc] = useState(false);
 
-// ============================================================================
-// MAIN APPLICATION COMPONENT
-// ============================================================================
-export default function App() {
-  // Active Navigation Tab
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [vehicles, setVehicles] = useState(INITIAL_FLEET);
+  const [catalog, setCatalog] = useState(INITIAL_CATALOG);
+  const [inquiries, setInquiries] = useState([]);
+  const [documents, setDocuments] = useState(INITIAL_DOCS);
+  const [payments, setPayments] = useState([]);
+  const [paymentSubmissions, setPaymentSubmissions] = useState([]);
+  const [expenses, setExpenses] = useState([]);
 
-  // Persistent State via localStorage
-  const [vehicles, setVehicles] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tunz_cars_vehicles_v1');
-      return saved ? JSON.parse(saved) : INITIAL_VEHICLES;
-    } catch {
-      return INITIAL_VEHICLES;
-    }
+  const [adminTab, setAdminTab] = useState('overview');
+  const [vehModal, setVehModal] = useState({ open: false, data: null });
+  const [catModal, setCatModal] = useState({ open: false, data: null });
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [docModal, setDocModal] = useState({ open: false, data: null });
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [payModal, setPayModal] = useState(false);
+  const [expModal, setExpModal] = useState(false);
+  const [proofViewer, setProofViewer] = useState(null);
+
+  const [carForm, setCarForm] = useState({
+    vehicleId: 'TC-VEH-01',
+    clientName: '',
+    organization: '',
+    phone: '',
+    licenseNo: '',
+    startDate: '2026-11-21',
+    endDate: '2026-11-23',
+    pickupLocation: 'Kavieng Airport (KVG)',
+    hireType: 'Self-Drive'
   });
 
-  const [billingDocs, setBillingDocs] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tunz_cars_billing_v1');
-      return saved ? JSON.parse(saved) : INITIAL_BILLING_DOCS;
-    } catch {
-      return INITIAL_BILLING_DOCS;
-    }
+  const [orderForm, setOrderForm] = useState({
+    itemId: 'TA-ORG-01',
+    quantity: 10,
+    clientName: '',
+    organization: '',
+    phone: '',
+    deliveryLocation: 'Port Moresby / Kavieng',
+    notes: ''
   });
 
-  const [payments, setPayments] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tunz_cars_payments_v1');
-      return saved ? JSON.parse(saved) : INITIAL_PAYMENTS;
-    } catch {
-      return INITIAL_PAYMENTS;
-    }
+  const [clientPayForm, setClientPayForm] = useState({
+    division: 'Tunz Cars',
+    bookingOrDocRef: '',
+    payerName: '',
+    phone: '',
+    amountPaid: '',
+    paymentDate: new Date().toISOString().slice(0, 10),
+    method: 'BSP Mobile / Internet Banking',
+    bankReference: '',
+    receiptImage: '',
+    receiptFileName: ''
   });
-
-  const [expenses, setExpenses] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tunz_cars_expenses_v1');
-      return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
-    } catch {
-      return INITIAL_EXPENSES;
-    }
-  });
+  const [uploadingProof, setUploadingProof] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(null);
 
   useEffect(() => {
+    signInAnonymously(auth).catch((err) => console.error('Auth error:', err));
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const base = ['artifacts', APP_ID, 'public', 'data'];
+
+    const u1 = onSnapshot(query(collection(db, ...base, 'vehicles')), (s) => {
+      if (!s.empty) setVehicles(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    const u2 = onSnapshot(query(collection(db, ...base, 'catalog')), (s) => {
+      if (!s.empty) setCatalog(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    const u3 = onSnapshot(query(collection(db, ...base, 'inquiries')), (s) => {
+      setInquiries(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    const u4 = onSnapshot(query(collection(db, ...base, 'documents')), (s) => {
+      if (!s.empty) setDocuments(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    const u5 = onSnapshot(query(collection(db, ...base, 'payments')), (s) => {
+      setPayments(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    const u6 = onSnapshot(query(collection(db, ...base, 'expenses')), (s) => {
+      setExpenses(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    const u7 = onSnapshot(query(collection(db, ...base, 'payment_submissions')), (s) => {
+      setPaymentSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); };
+  }, [user]);
+
+  const saveCloud = async (col, id, payload) => {
+    if (!user) return;
     try {
-      localStorage.setItem('tunz_cars_vehicles_v1', JSON.stringify(vehicles));
-      localStorage.setItem('tunz_cars_billing_v1', JSON.stringify(billingDocs));
-      localStorage.setItem('tunz_cars_payments_v1', JSON.stringify(payments));
-      localStorage.setItem('tunz_cars_expenses_v1', JSON.stringify(expenses));
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', col, id), payload, { merge: true });
+    } catch (e) { console.error(e); }
+  };
+
+  const deleteCloud = async (col, id) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', col, id));
+    } catch (e) { console.error(e); }
+  };
+
+  const calcDays = (s, e) => {
+    if (!s || !e) return 1;
+    const diff = Math.ceil((new Date(e) - new Date(s)) / (1000 * 60 * 60 * 24)) + 1;
+    return diff > 0 ? diff : 1;
+  };
+
+  const publicVehicles = useMemo(() => vehicles.filter(v => v.status !== 'Inactive'), [vehicles]);
+  const selectedVehicle = useMemo(
+    () => publicVehicles.find(v => v.id === carForm.vehicleId) || publicVehicles[0],
+    [publicVehicles, carForm.vehicleId]
+  );
+  const rentalDays = calcDays(carForm.startDate, carForm.endDate);
+  const rentalTotal = (selectedVehicle?.dailyRate || 250) * rentalDays;
+
+  const filteredCatalog = useMemo(
+    () => catalog.filter(c => publicTab === 'organics' ? c.division === 'Tunz Organics' : c.division === 'Tech & Merch'),
+    [catalog, publicTab]
+  );
+  const selectedProduct = useMemo(
+    () => filteredCatalog.find(c => c.id === orderForm.itemId) || filteredCatalog[0],
+    [filteredCatalog, orderForm.itemId]
+  );
+  const orderTotal = (selectedProduct?.unitPrice || 0) * Number(orderForm.quantity || 1);
+
+  const handleCarSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedVehicle) return;
+    const id = `TC-BK-2026-${String(inquiries.length + 101).padStart(3, '0')}`;
+    const record = {
+      id,
+      division: 'Tunz Cars',
+      clientName: carForm.clientName,
+      organization: carForm.organization,
+      phone: carForm.phone,
+      itemSummary: `${selectedVehicle.name} (${selectedVehicle.plate})`,
+      startDate: carForm.startDate,
+      endDate: carForm.endDate,
+      qty: rentalDays,
+      unitRate: selectedVehicle.dailyRate,
+      totalAmount: rentalTotal,
+      details: `${carForm.hireType} • Pickup: ${carForm.pickupLocation} • Lic: ${carForm.licenseNo}`,
+      status: 'Pending Approval',
+      createdAt: new Date().toISOString().slice(0, 10)
+    };
+    setInquiries(prev => [record, ...prev]);
+    await saveCloud('inquiries', id, record);
+    setSubmitSuccess(record);
+  };
+
+  const handleProductSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedProduct) return;
+    const prefix = selectedProduct.division === 'Tunz Organics' ? 'TO-ORD' : 'TA-REQ';
+    const id = `${prefix}-2026-${String(inquiries.length + 101).padStart(3, '0')}`;
+    const record = {
+      id,
+      division: selectedProduct.division,
+      clientName: orderForm.clientName,
+      organization: orderForm.organization,
+      phone: orderForm.phone,
+      itemSummary: selectedProduct.name,
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: new Date().toISOString().slice(0, 10),
+      qty: Number(orderForm.quantity || 1),
+      unitRate: selectedProduct.unitPrice,
+      totalAmount: orderTotal,
+      details: `Delivery: ${orderForm.deliveryLocation}${orderForm.notes ? ` • ${orderForm.notes}` : ''}`,
+      status: 'Pending Approval',
+      createdAt: new Date().toISOString().slice(0, 10)
+    };
+    setInquiries(prev => [record, ...prev]);
+    await saveCloud('inquiries', id, record);
+    setSubmitSuccess(record);
+  };
+
+  const handleProofFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingProof(true);
+    try {
+      const compressed = await compressReceiptImage(file);
+      setClientPayForm(prev => ({
+        ...prev,
+        receiptImage: compressed,
+        receiptFileName: file.name
+      }));
     } catch (err) {
-      console.error('Storage persistence warning:', err);
+      console.error('Image upload error:', err);
+    } finally {
+      setUploadingProof(false);
     }
-  }, [vehicles, billingDocs, payments, expenses]);
-
-  // Toast Notification Banner
-  const [toast, setToast] = useState(null);
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
   };
 
-  // Modals State
-  const [showDocModal, setShowDocModal] = useState(false);
-  const [editingDoc, setEditingDoc] = useState(null);
-  const [previewDoc, setPreviewDoc] = useState(null);
-
-  const [showVehicleModal, setShowVehicleModal] = useState(false);
-  const [editingVehicle, setEditingVehicle] = useState(null);
-
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentPrefillDoc, setPaymentPrefillDoc] = useState(null);
-
-  const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-
-  // Filters
-  const [docFilterType, setDocFilterType] = useState('All');
-  const [docSearch, setDocSearch] = useState('');
-  const [expenseFilterCat, setExpenseFilterCat] = useState('All');
-  const [expenseFilterVeh, setExpenseFilterVeh] = useState('All');
-  const [scheduleStartDate, setScheduleStartDate] = useState('2026-11-10');
-
-  // ============================================================================
-  // COMPUTED DASHBOARD METRICS & ANALYTICS
-  // ============================================================================
-  const metrics = useMemo(() => {
-    const activeFleetCount = vehicles.length;
-    const availableCount = vehicles.filter((v) => v.status === 'Available').length;
-    const onHireCount = vehicles.filter((v) => v.status === 'On Hire').length;
-    const maintenanceCount = vehicles.filter((v) => v.status === 'Maintenance').length;
-
-    // Confirmed bookings (Proformas & Receipts)
-    const confirmedDocs = billingDocs.filter((d) => d.docType === 'Proforma' || d.docType === 'Receipt');
-    const totalRentalDays = confirmedDocs.reduce((acc, d) => acc + (Number(d.days) || 0), 0);
-    const grossRevenue = confirmedDocs.reduce((acc, d) => acc + calcDocTotals(d).gross, 0);
-    const gstCollected = confirmedDocs.reduce((acc, d) => acc + calcDocTotals(d).gst, 0);
-
-    const totalCollected = payments.reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0);
-    const totalBondsHeld = payments.reduce((acc, p) => acc + (Number(p.bondCollected) || 0), 0);
-    const unpaidReceivables = Math.max(0, grossRevenue - totalCollected);
-
-    const totalExpenses = expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
-    const netFleetProfit = totalCollected - totalExpenses;
-
-    // Vehicle-by-vehicle breakdown
-    const byVehicle = vehicles.map((v) => {
-      const vDocs = confirmedDocs.filter((d) => d.vehicleId === v.id);
-      const rev = vDocs.reduce((s, d) => s + calcDocTotals(d).gross, 0);
-      const days = vDocs.reduce((s, d) => s + (Number(d.days) || 0), 0);
-      const exp = expenses.filter((e) => e.vehicleId === v.id).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-      return {
-        ...v,
-        revenue: rev,
-        daysBooked: days,
-        expenses: exp,
-        net: rev - exp
-      };
-    });
-
-    // Expense breakdown by category
-    const categories = ['Fuel', 'Routine Service', 'Repairs & Parts', 'Tyres & Alignment', 'Rego & MVIL'];
-    const byCategory = categories.map((cat) => {
-      const sum = expenses.filter((e) => e.category === cat).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-      return { category: cat, amount: sum };
-    });
-
-    return {
-      activeFleetCount,
-      availableCount,
-      onHireCount,
-      maintenanceCount,
-      totalRentalDays,
-      grossRevenue,
-      gstCollected,
-      totalCollected,
-      totalBondsHeld,
-      unpaidReceivables,
-      totalExpenses,
-      netFleetProfit,
-      byVehicle,
-      byCategory
+  const handleClientPaymentSubmit = async (e) => {
+    e.preventDefault();
+    const id = `TA-PROOF-${String(paymentSubmissions.length + 101).padStart(3, '0')}`;
+    const amt = Number(clientPayForm.amountPaid || 0);
+    const record = {
+      id,
+      division: clientPayForm.division,
+      bookingOrDocRef: clientPayForm.bookingOrDocRef.trim().toUpperCase(),
+      payerName: clientPayForm.payerName,
+      phone: clientPayForm.phone,
+      amountPaid: amt,
+      paymentDate: clientPayForm.paymentDate,
+      method: clientPayForm.method,
+      bankReference: clientPayForm.bankReference,
+      receiptImage: clientPayForm.receiptImage,
+      receiptFileName: clientPayForm.receiptFileName,
+      status: 'Pending Verification',
+      submittedAt: new Date().toISOString().slice(0, 10)
     };
-  }, [vehicles, billingDocs, payments, expenses]);
-
-  // ============================================================================
-  // ACTION HANDLERS
-  // ============================================================================
-  const handleResetDemoData = () => {
-    setVehicles(INITIAL_VEHICLES);
-    setBillingDocs(INITIAL_BILLING_DOCS);
-    setPayments(INITIAL_PAYMENTS);
-    setExpenses(INITIAL_EXPENSES);
-    setShowResetConfirm(false);
-    showToast('Demo data restored to original Kavieng fleet records.');
-  };
-
-  const handleToggleVehicleStatus = (vehId, newStatus) => {
-    setVehicles((prev) => prev.map((v) => (v.id === vehId ? { ...v, status: newStatus } : v)));
-    showToast(`Vehicle ${vehId} status updated to ${newStatus}.`);
-  };
-
-  const handleSaveVehicle = (formObj) => {
-    if (editingVehicle) {
-      setVehicles((prev) => prev.map((v) => (v.id === editingVehicle.id ? { ...v, ...formObj } : v)));
-      showToast(`Updated ${formObj.makeModel} (${formObj.id}).`);
-    } else {
-      const nextNum = String(vehicles.length + 1).padStart(2, '0');
-      const newVeh = {
-        ...formObj,
-        id: formObj.id || `TC-VEH-${nextNum}`
-      };
-      setVehicles((prev) => [...prev, newVeh]);
-      showToast(`Added ${newVeh.makeModel} to Tunz Cars fleet.`);
-    }
-    setShowVehicleModal(false);
-    setEditingVehicle(null);
-  };
-
-  const checkDateOverlap = (vehicleId, startStr, endStr, excludeDocId = null) => {
-    if (!startStr || !endStr) return null;
-    const s1 = new Date(startStr).getTime();
-    const e1 = new Date(endStr).getTime();
-    return billingDocs.find((d) => {
-      if (d.id === excludeDocId) return false;
-      if (d.vehicleId !== vehicleId) return false;
-      if (d.docType === 'Quote') return false; // Quotes don't lock the calendar until converted
-      const s2 = new Date(d.startDate).getTime();
-      const e2 = new Date(d.endDate).getTime();
-      return s1 <= e2 && e1 >= s2;
+    setPaymentSubmissions(prev => [record, ...prev]);
+    await saveCloud('payment_submissions', id, record);
+    setSubmitSuccess({
+      id,
+      isPaymentProof: true,
+      division: record.division,
+      itemSummary: `Payment Proof (${record.method}) — Ref: ${record.bankReference}`,
+      qty: 1,
+      unitRate: amt,
+      totalAmount: amt,
+      details: `Linked Ref: ${record.bookingOrDocRef || 'General Payment'} • Payer: ${record.payerName}`
     });
   };
 
-  const handleSaveBillingDoc = (formObj) => {
-    // Check double booking for Proforma or Receipt
-    if (formObj.docType !== 'Quote') {
-      const conflict = checkDateOverlap(formObj.vehicleId, formObj.startDate, formObj.endDate, editingDoc?.id);
-      if (conflict) {
-        showToast(
-          `Schedule Conflict: ${formObj.vehicleId} is already booked (${conflict.startDate} to ${conflict.endDate}) under ${conflict.id}!`,
-          'error'
-        );
-        return;
-      }
-    }
+  const verifyPaymentSubmission = async (sub) => {
+    const updatedSub = { ...sub, status: 'Verified & Receipted' };
+    setPaymentSubmissions(prev => prev.map(s => s.id === sub.id ? updatedSub : s));
+    await saveCloud('payment_submissions', sub.id, updatedSub);
 
-    if (editingDoc) {
-      setBillingDocs((prev) => prev.map((d) => (d.id === editingDoc.id ? { ...d, ...formObj } : d)));
-      showToast(`Updated document ${editingDoc.id}.`);
-    } else {
-      const prefix =
-        formObj.docType === 'Quote' ? 'TC-QT-2026-' : formObj.docType === 'Proforma' ? 'TC-PI-2026-' : 'TC-RCT-2026-';
-      const count = billingDocs.filter((d) => d.docType === formObj.docType).length + 1;
-      const newId = `${prefix}${String(count).padStart(3, '0')}`;
-      const newDoc = {
-        ...formObj,
-        id: newId,
-        quoteRef: formObj.docType === 'Quote' ? newId : formObj.quoteRef || '',
-        proformaRef: formObj.docType === 'Proforma' ? newId : formObj.proformaRef || '',
-        vraRef: formObj.docType !== 'Quote' ? `TC-VRA-2026-${String(count).padStart(3, '0')}` : ''
-      };
-      setBillingDocs((prev) => [newDoc, ...prev]);
-
-      // If created directly as Receipt, also log payment automatically
-      if (formObj.docType === 'Receipt') {
-        const totals = calcDocTotals(newDoc);
-        const newPay = {
-          id: `PAY-2026-${String(payments.length + 1).padStart(3, '0')}`,
-          date: formObj.date,
-          docRef: newId,
-          clientName: formObj.clientName,
-          vehicleId: formObj.vehicleId,
-          amountPaid: totals.gross,
-          bondCollected: Number(formObj.bondAmount) || 0,
-          method: formObj.paymentMethod || 'BSP Transfer',
-          accountDeposited: `BSP Acc # ${COMPANY_INFO.bspAccount}`,
-          referenceNo: 'AUTO-RCT',
-          status: 'Paid'
-        };
-        setPayments((prev) => [newPay, ...prev]);
-      }
-
-      showToast(`Created ${formObj.docType} ${newId}.`);
-    }
-
-    setShowDocModal(false);
-    setEditingDoc(null);
-  };
-
-  const handleConvertQuoteToProforma = (doc) => {
-    const conflict = checkDateOverlap(doc.vehicleId, doc.startDate, doc.endDate, doc.id);
-    if (conflict) {
-      showToast(
-        `Cannot convert: ${doc.vehicleId} is already booked (${conflict.startDate} to ${conflict.endDate}) on ${conflict.id}.`,
-        'error'
-      );
-      return;
-    }
-    const piCount = billingDocs.filter((d) => d.docType === 'Proforma' || d.proformaRef).length + 1;
-    const newPiId = `TC-PI-2026-${String(piCount).padStart(3, '0')}`;
-    const newVraId = `TC-VRA-2026-${String(piCount).padStart(3, '0')}`;
-
-    setBillingDocs((prev) =>
-      prev.map((d) =>
-        d.id === doc.id
-          ? {
-              ...d,
-              id: newPiId,
-              docType: 'Proforma',
-              quoteRef: doc.id,
-              proformaRef: newPiId,
-              vraRef: newVraId,
-              status: 'Pending'
-            }
-          : d
-      )
+    const matchedDoc = documents.find(
+      d => d.id.toUpperCase() === (sub.bookingOrDocRef || '').toUpperCase()
     );
-    showToast(`Converted ${doc.id} into Proforma Invoice ${newPiId} & locked vehicle schedule.`);
+
+    const payId = `TA-PAY-${String(payments.length + 1).padStart(3, '0')}`;
+    const payRec = {
+      id: payId,
+      docId: matchedDoc ? matchedDoc.id : (sub.bookingOrDocRef || sub.id),
+      date: sub.paymentDate,
+      amount: Number(sub.amountPaid || 0),
+      method: sub.method,
+      reference: `${sub.bankReference} (Verified from ${sub.payerName})`,
+      receiptImage: sub.receiptImage || ''
+    };
+    setPayments(prev => [payRec, ...prev]);
+    await saveCloud('payments', payId, payRec);
+
+    if (matchedDoc) {
+      const newPaid = Number(matchedDoc.paidAmount || 0) + Number(sub.amountPaid || 0);
+      const full = newPaid >= matchedDoc.totalAmount;
+      const updatedDoc = {
+        ...matchedDoc,
+        paidAmount: newPaid,
+        type: full ? 'Official Receipt' : matchedDoc.type,
+        status: full ? 'Paid in Full' : 'Part Paid'
+      };
+      setDocuments(prev => prev.map(d => d.id === matchedDoc.id ? updatedDoc : d));
+      await saveCloud('documents', matchedDoc.id, updatedDoc);
+    }
+    setAdminTab('payments');
   };
 
-  const handleLogPayment = (payForm) => {
-    const newPayId = `PAY-2026-${String(payments.length + 1).padStart(3, '0')}`;
-    const newPayment = {
-      ...payForm,
-      id: newPayId,
-      accountDeposited: `BSP Acc # ${COMPANY_INFO.bspAccount}`
-    };
-    setPayments((prev) => [newPayment, ...prev]);
-
-    // Update linked billing doc if selected
-    if (payForm.docRef) {
-      const targetDoc = billingDocs.find((d) => d.id === payForm.docRef);
-      if (targetDoc) {
-        const totals = calcDocTotals(targetDoc);
-        const priorPaid = payments
-          .filter((p) => p.docRef === targetDoc.id)
-          .reduce((s, p) => s + (Number(p.amountPaid) || 0), 0);
-        const totalNowPaid = priorPaid + (Number(payForm.amountPaid) || 0);
-        const isFull = totalNowPaid >= totals.gross - 0.01;
-
-        const rctCount = billingDocs.filter((d) => d.docType === 'Receipt').length + 1;
-        const newRctId = isFull ? `TC-RCT-2026-${String(rctCount).padStart(3, '0')}` : targetDoc.id;
-
-        setBillingDocs((prev) =>
-          prev.map((d) =>
-            d.id === targetDoc.id
-              ? {
-                  ...d,
-                  id: newRctId,
-                  docType: isFull ? 'Receipt' : d.docType,
-                  proformaRef: d.proformaRef || d.id,
-                  status: isFull ? 'Paid' : 'Part-Paid',
-                  paymentMethod: payForm.method
-                }
-              : d
-          )
-        );
-
-        // Also update payment's docRef to the new Receipt ID if upgraded
-        if (isFull) {
-          setPayments((prev) => prev.map((p) => (p.docRef === targetDoc.id ? { ...p, docRef: newRctId } : p)));
-          showToast(`Full payment logged! Issued Official Receipt ${newRctId}.`);
-        } else {
-          showToast(`Partial payment of ${formatPGK(payForm.amountPaid)} recorded against ${targetDoc.id}.`);
-        }
-      }
+  const handlePinUnlock = (e) => {
+    e.preventDefault();
+    if (pinInput === '2026') {
+      setMode('admin');
+      setShowPinModal(false);
+      setPinInput('');
+      setPinError('');
     } else {
-      showToast(`Payment ${newPayId} recorded (${formatPGK(payForm.amountPaid)}).`);
+      setPinError('Invalid PIN. Enter Owner PIN (2026).');
     }
-
-    setShowPaymentModal(false);
-    setPaymentPrefillDoc(null);
   };
 
-  const handleSaveExpense = (expForm) => {
-    const newExp = {
-      ...expForm,
-      id: `EXP-2026-${String(expenses.length + 1).padStart(3, '0')}`
+  const approveInquiry = async (inq) => {
+    const updated = { ...inq, status: 'Approved & Invoiced' };
+    setInquiries(prev => prev.map(x => x.id === inq.id ? updated : x));
+    await saveCloud('inquiries', inq.id, updated);
+
+    const piId = `TA-PI-2026-${String(documents.length + 1).padStart(3, '0')}`;
+    const newDoc = {
+      id: piId,
+      division: inq.division,
+      type: 'Proforma Invoice',
+      status: 'Unpaid',
+      date: new Date().toISOString().slice(0, 10),
+      clientName: inq.organization ? `${inq.organization} (${inq.clientName})` : inq.clientName,
+      clientContact: inq.phone,
+      itemSummary: inq.itemSummary,
+      startDate: inq.startDate,
+      endDate: inq.endDate,
+      qty: inq.qty,
+      unitLabel: inq.division === 'Tunz Cars' ? 'Days' : 'Units',
+      unitRate: inq.unitRate,
+      totalAmount: inq.totalAmount,
+      paidAmount: 0,
+      notes: `${inq.details} • Ref: ${inq.id}`
     };
-    setExpenses((prev) => [newExp, ...prev]);
-
-    // Update vehicle odometer if higher than current
-    if (Number(expForm.odometer) > 0) {
-      setVehicles((prev) =>
-        prev.map((v) =>
-          v.id === expForm.vehicleId && Number(expForm.odometer) > v.odometer
-            ? { ...v, odometer: Number(expForm.odometer) }
-            : v
-        )
-      );
-    }
-
-    showToast(`Logged ${expForm.category} expense (${formatPGK(expForm.amount)}) for ${expForm.vehicleId}.`);
-    setShowExpenseModal(false);
+    setDocuments(prev => [newDoc, ...prev]);
+    await saveCloud('documents', piId, newDoc);
+    setAdminTab('billing');
   };
 
-  // Filtered Lists
-  const filteredDocs = useMemo(() => {
-    return billingDocs.filter((d) => {
-      const matchesType = docFilterType === 'All' || d.docType === docFilterType;
-      const q = docSearch.toLowerCase();
-      const matchesSearch =
-        !q ||
-        d.id.toLowerCase().includes(q) ||
-        d.clientName.toLowerCase().includes(q) ||
-        d.vehicleId.toLowerCase().includes(q);
-      return matchesType && matchesSearch;
-    });
-  }, [billingDocs, docFilterType, docSearch]);
+  const saveVehicle = async (v) => {
+    const isNew = !v.id;
+    const id = v.id || `TC-VEH-${String(vehicles.length + 1).padStart(2, '0')}`;
+    const rec = { ...v, id, dailyRate: Number(v.dailyRate || 250), odometer: Number(v.odometer || 0), nextServiceKm: Number(v.nextServiceKm || 5000) };
+    setVehicles(prev => isNew ? [...prev, rec] : prev.map(x => x.id === id ? rec : x));
+    await saveCloud('vehicles', id, rec);
+    setVehModal({ open: false, data: null });
+  };
 
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter((e) => {
-      const matchesCat = expenseFilterCat === 'All' || e.category === expenseFilterCat;
-      const matchesVeh = expenseFilterVeh === 'All' || e.vehicleId === expenseFilterVeh;
-      return matchesCat && matchesVeh;
-    });
-  }, [expenses, expenseFilterCat, expenseFilterVeh]);
+  const saveCatalogItem = async (item) => {
+    const isNew = !item.id;
+    const id = item.id || `TA-SKU-${String(catalog.length + 1).padStart(2, '0')}`;
+    const rec = { ...item, id, unitPrice: Number(item.unitPrice || 0), stock: Number(item.stock || 0) };
+    setCatalog(prev => isNew ? [...prev, rec] : prev.map(x => x.id === id ? rec : x));
+    await saveCloud('catalog', id, rec);
+    setCatModal({ open: false, data: null });
+  };
 
-  // 14-day schedule window columns
-  const scheduleDays = useMemo(() => {
-    const arr = [];
-    const base = new Date(scheduleStartDate || '2026-11-10');
-    for (let i = 0; i < 14; i++) {
-      const dt = new Date(base);
-      dt.setDate(base.getDate() + i);
-      arr.push(dt.toISOString().slice(0, 10));
+  const saveDocument = async (d) => {
+    const isNew = !d.id;
+    const prefix = d.type === 'Quotation' ? 'TA-QT' : d.type === 'Proforma Invoice' ? 'TA-PI' : 'TA-RCT';
+    const id = d.id || `${prefix}-2026-${String(documents.length + 1).padStart(3, '0')}`;
+    const qty = d.division === 'Tunz Cars' ? calcDays(d.startDate, d.endDate) : Number(d.qty || 1);
+    const totalAmount = qty * Number(d.unitRate || 0);
+    const rec = {
+      ...d,
+      id,
+      qty,
+      unitRate: Number(d.unitRate || 0),
+      totalAmount,
+      paidAmount: d.type === 'Official Receipt' ? totalAmount : Number(d.paidAmount || 0)
+    };
+    setDocuments(prev => isNew ? [rec, ...prev] : prev.map(x => x.id === id ? rec : x));
+    await saveCloud('documents', id, rec);
+    setDocModal({ open: false, data: null });
+  };
+
+  const logPayment = async (p) => {
+    const id = `TA-PAY-${String(payments.length + 1).padStart(3, '0')}`;
+    const amt = Number(p.amount || 0);
+    const rec = { id, ...p, amount: amt };
+    setPayments(prev => [rec, ...prev]);
+    await saveCloud('payments', id, rec);
+
+    if (p.docId) {
+      const target = documents.find(x => x.id === p.docId);
+      if (target) {
+        const newPaid = Number(target.paidAmount || 0) + amt;
+        const full = newPaid >= target.totalAmount;
+        const updated = {
+          ...target,
+          paidAmount: newPaid,
+          type: full ? 'Official Receipt' : target.type,
+          status: full ? 'Paid in Full' : 'Part Paid'
+        };
+        setDocuments(prev => prev.map(x => x.id === target.id ? updated : x));
+        await saveCloud('documents', target.id, updated);
+      }
     }
-    return arr;
-  }, [scheduleStartDate]);
+    setPayModal(false);
+  };
 
-  // ============================================================================
-  // RENDER
-  // ============================================================================
+  const logExpense = async (ex) => {
+    const id = `TA-EXP-${String(expenses.length + 1).padStart(3, '0')}`;
+    const rec = { id, ...ex, amount: Number(ex.amount || 0) };
+    setExpenses(prev => [rec, ...prev]);
+    await saveCloud('expenses', id, rec);
+    setExpModal(false);
+  };
+
+  const metrics = useMemo(() => {
+    const collected = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const billed = documents.filter(d => d.type !== 'Quotation').reduce((s, d) => s + Number(d.totalAmount || 0), 0);
+    const gst = collected - collected / 1.1;
+    const exp = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+    return { collected, receivables: Math.max(0, billed - collected), gst, exp, net: collected - exp };
+  }, [payments, documents, expenses]);
+
+  const exportCSV = (filename, rows) => {
+    if (!rows.length) return;
+    const headers = Object.keys(rows[0]).filter(k => k !== 'receiptImage');
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+  };
+
+  const pendingProofsCount = paymentSubmissions.filter(s => s.status === 'Pending Verification').length;
+  const pendingInquiriesCount = inquiries.filter(i => i.status === 'Pending Approval').length;
+
   return (
-    <div className="min-h-screen bg-[#F7F6F2] text-[#162238] font-sans flex flex-col">
-      {/* PRINT STYLES FOR OFFICIAL DOCUMENT PREVIEW */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #printable-document, #printable-document * { visibility: visible; }
-          #printable-document {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white !important;
-            padding: 16px !important;
-            box-shadow: none !important;
-          }
-          .no-print { display: none !important; }
-        }
-      `}</style>
-
-      {/* TOAST NOTIFICATION */}
-      {toast && (
-        <div
-          className={`fixed bottom-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium transition-all ${
-            toast.type === 'error'
-              ? 'bg-[#9E2A2B] text-white border-red-800'
-              : 'bg-[#162238] text-white border-[#9A7B3E]'
-          }`}
-        >
-          {toast.type === 'error' ? (
-            <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
-          ) : (
-            <CheckCircle2 className="w-4 h-4 text-[#D4AF37] shrink-0" />
-          )}
-          <span>{toast.msg}</span>
-        </div>
-      )}
-
-      {/* TOP EXECUTIVE HEADER */}
-      <header className="bg-[#162238] text-white border-b-4 border-[#9A7B3E] shadow-md sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-          {/* Brand Logo & Holding Entity Info */}
-          <div className="flex items-center gap-3.5">
-            <div className="bg-white/95 p-1.5 rounded-xl shadow-inner border border-[#D4AF37]/40">
-              <TunzCarsLogoSVG size={46} />
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      <header className="bg-[#162238] text-white border-b-4 border-[#9A7B3E] sticky top-0 z-30 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#9A7B3E] to-[#9E2A2B] flex items-center justify-center font-extrabold text-white tracking-wider shadow">
+              TA
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
-                  TUNZ <span className="text-[#D4AF37]">CARS</span>
-                </h1>
-                <span className="text-[11px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded bg-[#2B3A52] text-[#F3E5AB] border border-[#9A7B3E]/50">
-                  {COMPANY_INFO.parent}
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-extrabold tracking-wide">TUNZ ACCESSORIES</h1>
+                <span className="text-[10px] uppercase tracking-widest bg-[#9A7B3E]/20 text-[#E5C98B] border border-[#9A7B3E]/40 px-2 py-0.5 rounded">
+                  Group Holding • PNG
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                <span>IPA Reg: <strong className="text-white">{COMPANY_INFO.ipaReg}</strong></span>
-                <span>•</span>
-                <span>IRC TIN: <strong className="text-white">{COMPANY_INFO.ircTin}</strong></span>
-                <span>•</span>
-                <span>BSP Kavieng: <strong className="text-[#D4AF37]">{COMPANY_INFO.bspAccount}</strong></span>
+              <p className="text-xs text-slate-300">
+                Subsidiaries: <strong>Tunz Cars</strong> • <strong>Tunz Organics</strong> • <strong>Tech & Merch</strong> | IPA 6-136546287 | TIN 501982530
               </p>
             </div>
           </div>
 
-          {/* Quick Header Actions */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setEditingDoc(null);
-                setShowDocModal(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#9A7B3E] hover:bg-[#b08d47] text-white text-xs sm:text-sm font-semibold shadow transition cursor-pointer"
+              onClick={() => { setMode('public'); setSubmitSuccess(null); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                mode === 'public' ? 'bg-[#9A7B3E] text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
             >
-              <Plus className="w-4 h-4" />
-              New Quote / Invoice
+              Client Storefront & Payments
             </button>
-            <button
-              onClick={() => {
-                setPaymentPrefillDoc(null);
-                setShowPaymentModal(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#2B3A52] hover:bg-[#374a68] text-white border border-slate-600 text-xs sm:text-sm font-medium transition cursor-pointer"
-            >
-              <CreditCard className="w-4 h-4 text-[#D4AF37]" />
-              Log Payment
-            </button>
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              title="Reset Demo Data"
-              className="p-2 rounded-lg bg-[#2B3A52]/70 hover:bg-[#9E2A2B] text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+            {mode === 'admin' ? (
+              <button
+                onClick={() => setMode('public')}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#9E2A2B] text-white flex items-center gap-1.5"
+              >
+                <Unlock className="w-3.5 h-3.5" /> Lock Admin
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowPinModal(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-slate-200 hover:bg-slate-700 flex items-center gap-1.5 border border-slate-600"
+              >
+                <Lock className="w-3.5 h-3.5 text-[#E5C98B]" /> Owner Admin
+              </button>
+            )}
           </div>
         </div>
-
-        {/* NAVIGATION TABS */}
-        <nav className="bg-[#2B3A52]/90 border-t border-slate-700/70">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto no-scrollbar gap-1 py-1.5">
-            {[
-              { id: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
-              { id: 'fleet', label: 'Fleet & Car Schedules', icon: Car },
-              { id: 'billing', label: 'Quotes, Invoices & Receipts', icon: FileText },
-              { id: 'payments', label: 'Payments Ledger', icon: CreditCard },
-              { id: 'expenses', label: 'Fuel & Maintenance', icon: Fuel }
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition cursor-pointer ${
-                    isActive
-                      ? 'bg-[#162238] text-[#D4AF37] shadow-sm border border-[#9A7B3E]/60'
-                      : 'text-slate-200 hover:bg-[#162238]/50 hover:text-white'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#D4AF37]' : 'text-slate-300'}`} />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
       </header>
 
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* ====================================================================
-            TAB 1: EXECUTIVE DASHBOARD
-        ==================================================================== */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-            {/* KPI CARDS GRID */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Gross Revenue (GST Incl.)</span>
-                  <div className="p-2 rounded-lg bg-[#162238]/5 text-[#162238]">
-                    <TrendingUp className="w-4 h-4" />
-                  </div>
-                </div>
-                <p className="text-2xl font-extrabold text-[#162238] mt-2">{formatPGK(metrics.grossRevenue)}</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Across <strong className="text-[#162238]">{metrics.totalRentalDays} rental days</strong> • 10% GST:{' '}
-                  <span className="font-semibold text-[#9A7B3E]">{formatPGK(metrics.gstCollected)}</span>
-                </p>
-              </div>
-
-              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Collected vs. Receivables</span>
-                  <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700">
-                    <DollarSign className="w-4 h-4" />
-                  </div>
-                </div>
-                <p className="text-2xl font-extrabold text-emerald-700 mt-2">{formatPGK(metrics.totalCollected)}</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Unpaid Balance:{' '}
-                  <strong className={metrics.unpaidReceivables > 0 ? 'text-[#9E2A2B]' : 'text-slate-700'}>
-                    {formatPGK(metrics.unpaidReceivables)}
-                  </strong>{' '}
-                  • Bonds: {formatPGK(metrics.totalBondsHeld)}
-                </p>
-              </div>
-
-              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Fuel & Operating Expenses</span>
-                  <div className="p-2 rounded-lg bg-rose-50 text-[#9E2A2B]">
-                    <Wrench className="w-4 h-4" />
-                  </div>
-                </div>
-                <p className="text-2xl font-extrabold text-[#9E2A2B] mt-2">{formatPGK(metrics.totalExpenses)}</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Net Cash Surplus:{' '}
-                  <strong className="text-[#162238]">{formatPGK(metrics.netFleetProfit)}</strong>
-                </p>
-              </div>
-
-              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Active Fleet Status</span>
-                  <div className="p-2 rounded-lg bg-amber-50 text-[#9A7B3E]">
-                    <Car className="w-4 h-4" />
-                  </div>
-                </div>
-                <p className="text-2xl font-extrabold text-[#162238] mt-2">
-                  {metrics.availableCount} <span className="text-sm font-semibold text-slate-500">/ {metrics.activeFleetCount} Ready</span>
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  <span className="text-amber-700 font-semibold">{metrics.onHireCount} On Hire</span> •{' '}
-                  <span className="text-[#9E2A2B] font-semibold">{metrics.maintenanceCount} Maintenance</span>
-                </p>
+      {mode === 'public' && (
+        <main className="max-w-6xl mx-auto px-4 py-8">
+          <div className="bg-gradient-to-r from-[#162238] via-[#1f304f] to-[#162238] text-white rounded-2xl p-6 md:p-8 mb-6 shadow-lg border border-[#9A7B3E]/30">
+            <div className="max-w-3xl">
+              <span className="inline-block text-xs font-bold uppercase tracking-widest text-[#E5C98B] mb-1.5">
+                Papua New Guinea Commercial Enterprise • Port Moresby & Kavieng
+              </span>
+              <h2 className="text-2xl md:text-3xl font-extrabold mb-2">
+                Tunz Accessories — Fleet Hire, Organic Soaps & Payment Portal
+              </h2>
+              <p className="text-sm text-slate-300 mb-4">
+                Book a vehicle in Kavieng, order Tunz Organics soaps or corporate IT & merchandise, or upload your BSP payment receipt for instant verification.
+              </p>
+              <div className="flex flex-wrap gap-4 text-xs text-slate-200">
+                <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-[#E5C98B]" /> +675 7962 5068</span>
+                <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#E5C98B]" /> tuneabel@gmail.com</span>
+                <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-[#E5C98B]" /> Port Moresby & Kavieng, PNG</span>
               </div>
             </div>
+          </div>
 
-            {/* FLEET QUICK STATUS CARDS */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                <div>
-                  <h2 className="text-base font-bold text-[#162238]">Kavieng Fleet Live Availability & Quick Status</h2>
-                  <p className="text-xs text-slate-500">Toggle live vehicle availability or jump directly to booking schedules.</p>
-                </div>
-                <button
-                  onClick={() => setActiveTab('fleet')}
-                  className="text-xs font-semibold text-[#9A7B3E] hover:underline inline-flex items-center gap-1 cursor-pointer"
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+            <button
+              onClick={() => { setPublicTab('cars'); setSubmitSuccess(null); }}
+              className={`p-4 rounded-xl border-2 text-left transition flex items-center gap-3 ${
+                publicTab === 'cars' ? 'bg-white border-[#9A7B3E] shadow-md' : 'bg-white/70 border-slate-200 hover:bg-white'
+              }`}
+            >
+              <div className="w-10 h-10 rounded-lg bg-[#162238] text-[#E5C98B] flex items-center justify-center shrink-0">
+                <Car className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-[#9A7B3E]">Subsidiary 01</div>
+                <div className="font-extrabold text-sm text-slate-900">Tunz Cars Hire</div>
+                <div className="text-[11px] text-slate-500">Kavieng Fleet Rentals</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => { setPublicTab('organics'); setSubmitSuccess(null); setOrderForm(f => ({ ...f, itemId: 'TA-ORG-01', quantity: 10 })); }}
+              className={`p-4 rounded-xl border-2 text-left transition flex items-center gap-3 ${
+                publicTab === 'organics' ? 'bg-white border-[#9A7B3E] shadow-md' : 'bg-white/70 border-slate-200 hover:bg-white'
+              }`}
+            >
+              <div className="w-10 h-10 rounded-lg bg-emerald-800 text-emerald-100 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-emerald-700">Subsidiary 02</div>
+                <div className="font-extrabold text-sm text-slate-900">Tunz Organics</div>
+                <div className="text-[11px] text-slate-500">Coconut Oil Soaps</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => { setPublicTab('tech'); setSubmitSuccess(null); setOrderForm(f => ({ ...f, itemId: 'TA-TECH-01', quantity: 2 })); }}
+              className={`p-4 rounded-xl border-2 text-left transition flex items-center gap-3 ${
+                publicTab === 'tech' ? 'bg-white border-[#9A7B3E] shadow-md' : 'bg-white/70 border-slate-200 hover:bg-white'
+              }`}
+            >
+              <div className="w-10 h-10 rounded-lg bg-[#9E2A2B] text-white flex items-center justify-center shrink-0">
+                <Laptop className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-[#9E2A2B]">Division 03</div>
+                <div className="font-extrabold text-sm text-slate-900">Tech & Merch</div>
+                <div className="text-[11px] text-slate-500">Laptops & Apparel</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => { setPublicTab('pay'); setSubmitSuccess(null); }}
+              className={`p-4 rounded-xl border-2 text-left transition flex items-center gap-3 ${
+                publicTab === 'pay' ? 'bg-white border-emerald-600 shadow-md ring-2 ring-emerald-500/20' : 'bg-white/70 border-slate-200 hover:bg-white'
+              }`}
+            >
+              <div className="w-10 h-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                <CreditCard className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-emerald-700">Customer Billing</div>
+                <div className="font-extrabold text-sm text-slate-900">Payment Portal</div>
+                <div className="text-[11px] text-slate-500">Pay & Upload Receipt</div>
+              </div>
+            </button>
+          </div>
+
+          {submitSuccess ? (
+            <div className="bg-white rounded-2xl border-2 border-emerald-500 p-8 max-w-2xl mx-auto text-center shadow-lg">
+              <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-8 h-8" />
+              </div>
+              <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">{submitSuccess.division}</span>
+              <h3 className="text-2xl font-bold text-slate-900 mb-1">
+                {submitSuccess.isPaymentProof ? 'Payment Proof Uploaded!' : 'Request Submitted Successfully!'}
+              </h3>
+              <p className="text-sm text-slate-600 mb-4">
+                Tracking Reference: <span className="font-mono font-bold text-[#162238]">{submitSuccess.id}</span>
+              </p>
+              <div className="bg-slate-50 rounded-xl p-4 text-left text-sm space-y-1.5 mb-6 border border-slate-200">
+                <p><strong>Summary:</strong> {submitSuccess.itemSummary}</p>
+                {!submitSuccess.isPaymentProof && (
+                  <p><strong>Quantity / Duration:</strong> {submitSuccess.qty} × {formatPGK(submitSuccess.unitRate)}</p>
+                )}
+                <p><strong>Details:</strong> {submitSuccess.details}</p>
+                <p><strong>Amount (PGK):</strong> <span className="font-bold text-[#9E2A2B]">{formatPGK(submitSuccess.totalAmount)}</span></p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-3">
+                {!submitSuccess.isPaymentProof && (
+                  <button
+                    onClick={() => {
+                      setClientPayForm(p => ({
+                        ...p,
+                        division: submitSuccess.division,
+                        bookingOrDocRef: submitSuccess.id,
+                        amountPaid: submitSuccess.totalAmount
+                      }));
+                      setPublicTab('pay');
+                      setSubmitSuccess(null);
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-[#162238] hover:bg-slate-800 text-white font-semibold text-sm flex items-center gap-2"
+                  >
+                    <CreditCard className="w-4 h-4 text-[#E5C98B]" /> Pay Now & Upload Receipt
+                  </button>
+                )}
+                <a
+                  href={`https://wa.me/67579625068?text=${encodeURIComponent(
+                    submitSuccess.isPaymentProof
+                      ? `Hello Tunz Accessories, I uploaded payment proof ${submitSuccess.id} for ${formatPGK(submitSuccess.totalAmount)}. ${submitSuccess.details}`
+                      : `Hello Tunz Accessories (${submitSuccess.division}), I submitted request ${submitSuccess.id} for ${submitSuccess.itemSummary} (Total: ${formatPGK(submitSuccess.totalAmount)}).`
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm flex items-center gap-2"
                 >
-                  Open Full Fleet & Calendar <ChevronRight className="w-3.5 h-3.5" />
+                  <Send className="w-4 h-4" /> Notify via WhatsApp
+                </a>
+                <button
+                  onClick={() => setSubmitSuccess(null)}
+                  className="px-5 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold text-sm"
+                >
+                  Back to Portal
                 </button>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {metrics.byVehicle.map((v) => {
-                  const kmToService = v.nextServiceOdo - v.odometer;
-                  return (
-                    <div
-                      key={v.id}
-                      className="rounded-xl border border-slate-200 bg-[#F7F6F2]/60 p-4 flex flex-col justify-between gap-3"
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#9A7B3E]">
-                              {v.id} • {v.plate}
-                            </span>
-                            <h3 className="font-bold text-[#162238] text-sm mt-0.5">{v.makeModel}</h3>
-                            <p className="text-xs text-slate-500">{v.color} • {v.category}</p>
-                          </div>
-                          <StatusBadge status={v.status} />
-                        </div>
-
-                        <div className="mt-3 pt-3 border-t border-slate-200/80 grid grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <span className="text-slate-400 block">Daily Hire Rate</span>
-                            <strong className="text-[#162238]">{formatPGK(v.dailyRate)}/day</strong>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block">Odometer / Service</span>
-                            <strong className={kmToService <= 1500 ? 'text-[#9E2A2B]' : 'text-[#162238]'}>
-                              {v.odometer.toLocaleString()} km
-                            </strong>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200">
-                        <select
-                          value={v.status}
-                          onChange={(e) => handleToggleVehicleStatus(v.id, e.target.value)}
-                          className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-[#162238] focus:outline-none focus:border-[#9A7B3E]"
-                        >
-                          <option value="Available">Available</option>
-                          <option value="On Hire">On Hire</option>
-                          <option value="Maintenance">Maintenance</option>
-                          <option value="Reserved">Reserved</option>
-                        </select>
+            </div>
+          ) : publicTab === 'pay' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="space-y-4">
+                <div className="bg-[#162238] text-white rounded-2xl p-6 shadow-md border-t-4 border-[#9A7B3E]">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#E5C98B]">Official Settlement Account</span>
+                  <h3 className="text-xl font-extrabold mt-1 mb-4">BSP Bank Transfer Details</h3>
+                  <div className="space-y-3 text-sm bg-slate-900/60 p-4 rounded-xl border border-slate-700">
+                    <div>
+                      <p className="text-[11px] text-slate-400">Bank & Branch</p>
+                      <p className="font-bold">Bank South Pacific (BSP) — Kavieng</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-slate-400">Account Name</p>
+                      <p className="font-bold">Barrie Tunz Jr Abel</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-slate-400">Account Number</p>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <span className="font-mono text-lg font-extrabold text-[#E5C98B]">1001252316</span>
                         <button
+                          type="button"
                           onClick={() => {
-                            setEditingDoc({
-                              docType: 'Quote',
-                              date: new Date().toISOString().slice(0, 10),
-                              validUntil: '2026-12-18',
-                              clientName: '',
-                              contactPerson: '',
-                              clientPhone: '',
-                              clientEmail: '',
-                              vehicleId: v.id,
-                              hireType: 'Self-Drive',
-                              startDate: '2026-11-20',
-                              endDate: '2026-11-23',
-                              days: 3,
-                              dailyRate: v.dailyRate,
-                              extraFees: 0,
-                              extraDesc: '',
-                              bondAmount: 0,
-                              status: 'Pending',
-                              paymentMethod: 'BSP Transfer',
-                              notes: ''
-                            });
-                            setShowDocModal(true);
+                            navigator.clipboard?.writeText('1001252316');
+                            setCopiedAcc(true);
+                            setTimeout(() => setCopiedAcc(false), 2000);
                           }}
-                          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#162238] text-white hover:bg-[#2B3A52] transition cursor-pointer"
+                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1"
                         >
-                          Book Vehicle
+                          <Copy className="w-3 h-3" /> {copiedAcc ? 'Copied!' : 'Copy'}
                         </button>
                       </div>
                     </div>
-                  );
-                })}
+                    <div>
+                      <p className="text-[11px] text-slate-400">IRC TIN / IPA Registration</p>
+                      <p className="text-xs font-mono">TIN: 501982530 • IPA: 6-136546287</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-4 leading-relaxed">
+                    Use your <strong>Booking ID</strong> (e.g., <span className="font-mono text-[#E5C98B]">TC-BK-2026-101</span>) or <strong>Invoice #</strong> as your BSP transfer narration, then upload your payment receipt on the right.
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm text-xs space-y-2">
+                  <h4 className="font-bold text-slate-900 text-sm">Accepted Payment Methods</h4>
+                  <p className="text-slate-600">• <strong>BSP Mobile / Internet Banking:</strong> Instant transfer to Account 1001252316.</p>
+                  <p className="text-slate-600">• <strong>Over-the-Counter BSP Deposit:</strong> Upload photo of stamped deposit slip.</p>
+                  <p className="text-slate-600">• <strong>Institutional / Hospital LPO:</strong> Upload signed LPO or remittance advice.</p>
+                </div>
+              </div>
+
+              <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+                <h3 className="text-xl font-extrabold text-[#162238] mb-1">Submit Payment Reference & Receipt Slip</h3>
+                <p className="text-xs text-slate-500 mb-6">
+                  Once verified by our accounts team, your Proforma Invoice automatically upgrades to an Official GST Tax Receipt.
+                </p>
+
+                <form onSubmit={handleClientPaymentSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Subsidiary / Division *</label>
+                      <select
+                        value={clientPayForm.division}
+                        onChange={e => setClientPayForm({ ...clientPayForm, division: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                      >
+                        <option>Tunz Cars</option>
+                        <option>Tunz Organics</option>
+                        <option>Tech & Merch</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Booking ID or Invoice #</label>
+                      <input
+                        type="text"
+                        placeholder="e.g., TC-BK-2026-101 or TA-PI-2026-001"
+                        value={clientPayForm.bookingOrDocRef}
+                        onChange={e => setClientPayForm({ ...clientPayForm, bookingOrDocRef: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Payer / Organization Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Full Name or Institution"
+                        value={clientPayForm.payerName}
+                        onChange={e => setClientPayForm({ ...clientPayForm, payerName: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Phone / WhatsApp Number *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="+675 7XXX XXXX"
+                        value={clientPayForm.phone}
+                        onChange={e => setClientPayForm({ ...clientPayForm, phone: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Amount Paid (PGK) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        placeholder="e.g., 500.00"
+                        value={clientPayForm.amountPaid}
+                        onChange={e => setClientPayForm({ ...clientPayForm, amountPaid: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Date *</label>
+                      <input
+                        type="date"
+                        required
+                        value={clientPayForm.paymentDate}
+                        onChange={e => setClientPayForm({ ...clientPayForm, paymentDate: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Method</label>
+                      <select
+                        value={clientPayForm.method}
+                        onChange={e => setClientPayForm({ ...clientPayForm, method: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"
+                      >
+                        <option>BSP Mobile / Internet Banking</option>
+                        <option>BSP Branch Cash Deposit</option>
+                        <option>Interbank Transfer (Kina / Westpac / ANZ)</option>
+                        <option>Government / Hospital LPO</option>
+                        <option>Cash / EFTPOS at Pickup</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Bank Transaction Reference / Receipt Number *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter BSP Ref #, Receipt #, or LPO Number"
+                      value={clientPayForm.bankReference}
+                      onChange={e => setClientPayForm({ ...clientPayForm, bankReference: e.target.value })}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Upload Screenshot or Photo of Payment Receipt (Optional)</label>
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-[#9A7B3E] rounded-xl p-5 cursor-pointer bg-slate-50/70 transition">
+                      <Upload className="w-6 h-6 text-[#9A7B3E] mb-1.5" />
+                      <span className="text-xs font-bold text-slate-700">
+                        {uploadingProof
+                          ? 'Compressing receipt image...'
+                          : clientPayForm.receiptFileName
+                          ? `Attached: ${clientPayForm.receiptFileName}`
+                          : 'Click to select screenshot or deposit slip photo (JPG/PNG)'}
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-0.5">Automatically compressed for instant cloud verification</span>
+                      <input type="file" accept="image/*" onChange={handleProofFileChange} className="hidden" />
+                    </label>
+                    {clientPayForm.receiptImage && (
+                      <div className="mt-3 flex items-center gap-3 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg">
+                        <img src={clientPayForm.receiptImage} alt="Receipt preview" className="w-14 h-14 object-cover rounded border" />
+                        <div className="text-xs flex-1">
+                          <p className="font-bold text-emerald-800">Receipt slip ready to submit</p>
+                          <p className="text-emerald-700">{clientPayForm.receiptFileName}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setClientPayForm(p => ({ ...p, receiptImage: '', receiptFileName: '' }))}
+                          className="text-xs text-red-600 font-bold px-2"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={uploadingProof}
+                    className="w-full py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow transition"
+                  >
+                    Submit Payment Confirmation
+                  </button>
+                </form>
               </div>
             </div>
-
-            {/* VISUAL CHARTS & ALERTS ROW */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Revenue vs Expenses by Vehicle Bar Visualization */}
-              <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <h2 className="text-base font-bold text-[#162238]">Vehicle Financial Performance (PGK)</h2>
-                <p className="text-xs text-slate-500 mb-4">Confirmed rental revenue vs. fuel & maintenance expenses per unit</p>
-
-                <div className="space-y-4">
-                  {metrics.byVehicle.map((v) => {
-                    const maxVal = Math.max(
-                      1500,
-                      ...metrics.byVehicle.map((item) => Math.max(item.revenue, item.expenses))
-                    );
-                    const revPct = Math.min(100, Math.round((v.revenue / maxVal) * 100));
-                    const expPct = Math.min(100, Math.round((v.expenses / maxVal) * 100));
-
+          ) : publicTab === 'cars' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-4">
+                <h3 className="text-lg font-bold text-[#162238]">1. Select Kavieng Fleet Vehicle</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {publicVehicles.map((v) => {
+                    const isSelected = selectedVehicle?.id === v.id;
+                    const isAvail = v.status === 'Available';
                     return (
-                      <div key={v.id} className="p-3.5 rounded-xl bg-[#F7F6F2] border border-slate-200/80">
-                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                          <div>
-                            <span className="font-bold text-sm text-[#162238]">{v.makeModel}</span>
-                            <span className="text-xs text-slate-500 ml-2">({v.id} • {v.daysBooked} days booked)</span>
-                          </div>
-                          <span
-                            className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                              v.net >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                            }`}
-                          >
-                            Net: {formatPGK(v.net)}
+                      <div
+                        key={v.id}
+                        onClick={() => isAvail && setCarForm({ ...carForm, vehicleId: v.id })}
+                        className={`rounded-xl border-2 p-5 transition cursor-pointer bg-white ${
+                          isSelected ? 'border-[#9A7B3E] ring-2 ring-[#9A7B3E]/20 shadow-md' : isAvail ? 'border-slate-200 hover:border-slate-300' : 'border-slate-200 opacity-60 cursor-not-allowed'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">{v.category}</span>
+                          <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${isAvail ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {v.status}
                           </span>
                         </div>
-
-                        <div className="space-y-2 text-xs">
+                        <h4 className="text-lg font-bold text-slate-900">{v.name}</h4>
+                        <p className="text-xs text-slate-500 mb-3">{v.seats} • Rego: {v.plate}</p>
+                        <p className="text-xs text-slate-600 mb-4">{v.highlights}</p>
+                        <div className="pt-3 border-t border-slate-100 flex items-baseline justify-between">
                           <div>
-                            <div className="flex justify-between mb-1">
-                              <span className="text-slate-600 font-medium">Confirmed Revenue</span>
-                              <span className="font-bold text-[#162238]">{formatPGK(v.revenue)}</span>
-                            </div>
-                            <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                              <div
-                                className="bg-[#162238] h-2.5 rounded-full transition-all duration-500"
-                                style={{ width: `${revPct}%` }}
-                              />
-                            </div>
+                            <span className="text-xl font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</span>
+                            <span className="text-xs text-slate-500"> / day (GST Incl.)</span>
                           </div>
-
-                          <div>
-                            <div className="flex justify-between mb-1">
-                              <span className="text-slate-600 font-medium">Fuel & Maintenance</span>
-                              <span className="font-bold text-[#9E2A2B]">{formatPGK(v.expenses)}</span>
-                            </div>
-                            <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                              <div
-                                className="bg-[#9E2A2B] h-2.5 rounded-full transition-all duration-500"
-                                style={{ width: `${expPct}%` }}
-                              />
-                            </div>
-                          </div>
+                          {isSelected && <span className="text-xs font-bold text-[#9A7B3E]">Selected ✓</span>}
                         </div>
                       </div>
                     );
@@ -1227,1860 +1020,1119 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Expense Category Breakdown & Service Alerts */}
-              <div className="space-y-6">
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                  <h2 className="text-base font-bold text-[#162238]">Expense Breakdown</h2>
-                  <p className="text-xs text-slate-500 mb-3">Operating outflows by cost category</p>
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
+                <h3 className="text-lg font-bold text-[#162238] mb-4">2. Vehicle Reservation</h3>
+                <form onSubmit={handleCarSubmit} className="space-y-3.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Pickup Date *</label>
+                      <input type="date" required value={carForm.startDate} onChange={e => setCarForm({ ...carForm, startDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Return Date *</label>
+                      <input type="date" required min={carForm.startDate} value={carForm.endDate} onChange={e => setCarForm({ ...carForm, endDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name *</label>
+                    <input type="text" required placeholder="e.g., Dr. John Kila" value={carForm.clientName} onChange={e => setCarForm({ ...carForm, clientName: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Organization / Hospital / LLG</label>
+                    <input type="text" placeholder="e.g., Kavieng General Hospital" value={carForm.organization} onChange={e => setCarForm({ ...carForm, organization: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Phone / WhatsApp *</label>
+                      <input type="text" required placeholder="+675 7XXX XXXX" value={carForm.phone} onChange={e => setCarForm({ ...carForm, phone: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Driver Licence # *</label>
+                      <input type="text" required placeholder="PNG Licence" value={carForm.licenseNo} onChange={e => setCarForm({ ...carForm, licenseNo: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Hire Type</label>
+                      <select value={carForm.hireType} onChange={e => setCarForm({ ...carForm, hireType: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        <option>Self-Drive</option>
+                        <option>Chauffeur-Driven</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Pickup Point</label>
+                      <select value={carForm.pickupLocation} onChange={e => setCarForm({ ...carForm, pickupLocation: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        <option>Kavieng Airport (KVG)</option>
+                        <option>Kavieng Town Center</option>
+                        <option>Kavieng General Hospital</option>
+                        <option>Murat LLG Office</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-1 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>{selectedVehicle?.name} × {rentalDays} day(s)</span>
+                      <span>{formatPGK(rentalTotal)}</span>
+                    </div>
+                    <div className="flex justify-between font-extrabold text-sm text-[#162238] pt-1.5 border-t border-slate-200">
+                      <span>Estimated Total (GST Incl.)</span>
+                      <span>{formatPGK(rentalTotal)}</span>
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-3 rounded-xl bg-[#9E2A2B] hover:bg-[#822021] text-white font-bold text-sm shadow transition">
+                    Request Vehicle Booking
+                  </button>
+                </form>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-4">
+                <h3 className="text-lg font-bold text-[#162238]">
+                  1. Select {publicTab === 'organics' ? 'Tunz Organics Wholesale / Retail Package' : 'IT Equipment & Custom Merchandise'}
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredCatalog.map((item) => {
+                    const isSelected = selectedProduct?.id === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => setOrderForm({ ...orderForm, itemId: item.id })}
+                        className={`rounded-xl border-2 p-5 transition cursor-pointer bg-white ${
+                          isSelected ? 'border-[#9A7B3E] ring-2 ring-[#9A7B3E]/20 shadow-md' : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">{item.division}</span>
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                            {item.status} ({item.stock})
+                          </span>
+                        </div>
+                        <h4 className="text-base font-bold text-slate-900 mb-1">{item.name}</h4>
+                        <p className="text-xs text-slate-500 mb-3">{item.unit}</p>
+                        <p className="text-xs text-slate-600 mb-4">{item.description}</p>
+                        <div className="pt-3 border-t border-slate-100 flex items-baseline justify-between">
+                          <div>
+                            <span className="text-xl font-extrabold text-[#162238]">{formatPGK(item.unitPrice)}</span>
+                            <span className="text-xs text-slate-500"> / unit (GST Incl.)</span>
+                          </div>
+                          {isSelected && <span className="text-xs font-bold text-[#9A7B3E]">Selected ✓</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
+                <h3 className="text-lg font-bold text-[#162238] mb-4">2. Order / Quote Request</h3>
+                <form onSubmit={handleProductSubmit} className="space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Quantity *</label>
+                    <input type="number" min="1" required value={orderForm.quantity} onChange={e => setOrderForm({ ...orderForm, quantity: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Contact Name *</label>
+                    <input type="text" required placeholder="Full Name" value={orderForm.clientName} onChange={e => setOrderForm({ ...orderForm, clientName: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Resort / School / Business Name</label>
+                    <input type="text" placeholder="e.g., Nusa Island Retreat / PAU" value={orderForm.organization} onChange={e => setOrderForm({ ...orderForm, organization: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Phone / WhatsApp *</label>
+                      <input type="text" required placeholder="+675 ..." value={orderForm.phone} onChange={e => setOrderForm({ ...orderForm, phone: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Delivery Province</label>
+                      <input type="text" value={orderForm.deliveryLocation} onChange={e => setOrderForm({ ...orderForm, deliveryLocation: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Custom Specs / Branding Notes</label>
+                    <input type="text" placeholder="e.g., Custom logo stamp, shirt sizes, specs" value={orderForm.notes} onChange={e => setOrderForm({ ...orderForm, notes: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-1 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>{selectedProduct?.name} × {orderForm.quantity}</span>
+                      <span>{formatPGK(orderTotal)}</span>
+                    </div>
+                    <div className="flex justify-between font-extrabold text-sm text-[#162238] pt-1.5 border-t border-slate-200">
+                      <span>Estimated Total (GST Incl.)</span>
+                      <span>{formatPGK(orderTotal)}</span>
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-3 rounded-xl bg-[#162238] hover:bg-slate-800 text-white font-bold text-sm shadow transition">
+                    Submit Order / Quote Request
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </main>
+      )}
+
+      {mode === 'admin' && (
+        <main className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-3">
+            {[
+              { id: 'overview', label: 'Group Overview', icon: TrendingUp },
+              { id: 'requests', label: `Client Requests (${pendingInquiriesCount})`, icon: Calendar },
+              { id: 'proofs', label: `Payment Proofs (${pendingProofsCount})`, icon: Upload },
+              { id: 'cars', label: 'Tunz Cars Fleet', icon: Car },
+              { id: 'catalog', label: 'Organics & Tech', icon: Package },
+              { id: 'billing', label: 'Quotes & Invoices', icon: FileText },
+              { id: 'payments', label: 'BSP Ledger', icon: CreditCard },
+              { id: 'expenses', label: 'Expenses', icon: Fuel }
+            ].map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setAdminTab(tab.id)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                    adminTab === tab.id ? 'bg-[#162238] text-white shadow' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" /> {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {adminTab === 'overview' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase">Group Collected Revenue</p>
+                  <p className="text-2xl font-extrabold text-emerald-700 mt-1">{formatPGK(metrics.collected)}</p>
+                  <p className="text-xs text-slate-400 mt-1">10% IRC GST: {formatPGK(metrics.gst)}</p>
+                </div>
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase">Unpaid Receivables</p>
+                  <p className="text-2xl font-extrabold text-amber-600 mt-1">{formatPGK(metrics.receivables)}</p>
+                  <p className="text-xs text-slate-400 mt-1">Pending Proofs: {pendingProofsCount}</p>
+                </div>
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase">Group Operating Costs</p>
+                  <p className="text-2xl font-extrabold text-[#9E2A2B] mt-1">{formatPGK(metrics.exp)}</p>
+                  <p className="text-xs text-slate-400 mt-1">Fuel, Service, Raw Materials</p>
+                </div>
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase">Net Group Cashflow</p>
+                  <p className="text-2xl font-extrabold text-[#162238] mt-1">{formatPGK(metrics.net)}</p>
+                  <p className="text-xs text-slate-400 mt-1">BSP Acc: 1001252316</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7B3E]">Subsidiary 01</span>
+                      <h3 className="font-bold text-slate-900">Tunz Cars — Kavieng Live Fleet</h3>
+                    </div>
+                    <button onClick={() => setVehModal({ open: true, data: null })} className="px-3 py-1.5 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Add Vehicle
+                    </button>
+                  </div>
                   <div className="space-y-2.5">
-                    {metrics.byCategory.map((c) => {
-                      const pct =
-                        metrics.totalExpenses > 0 ? Math.round((c.amount / metrics.totalExpenses) * 100) : 0;
-                      return (
-                        <div key={c.category} className="text-xs">
-                          <div className="flex justify-between font-medium mb-1">
-                            <span className="text-slate-700">{c.category}</span>
-                            <span className="font-bold text-[#162238]">
-                              {formatPGK(c.amount)} ({pct}%)
-                            </span>
-                          </div>
-                          <div className="w-full bg-slate-100 rounded-full h-2">
-                            <div
-                              className="bg-[#9A7B3E] h-2 rounded-full"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
+                    {vehicles.map(v => (
+                      <div key={v.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50/60">
+                        <div>
+                          <div className="font-bold text-sm">{v.name} <span className="text-xs font-mono text-slate-500">({v.plate})</span></div>
+                          <div className="text-xs text-slate-500">{formatPGK(v.dailyRate)}/day • Odo: {Number(v.odometer).toLocaleString()} km</div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Compliance & Service Alerts */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                  <h2 className="text-base font-bold text-[#162238] flex items-center gap-2 mb-3">
-                    <AlertTriangle className="w-4 h-4 text-[#9E2A2B]" />
-                    Fleet & Service Alerts
-                  </h2>
-                  <div className="space-y-2.5 text-xs">
-                    {vehicles.map((v) => {
-                      const kmLeft = v.nextServiceOdo - v.odometer;
-                      const isDue = kmLeft <= 1500;
-                      return (
-                        <div
-                          key={v.id}
-                          className={`p-3 rounded-lg border ${
-                            isDue
-                              ? 'bg-rose-50/80 border-rose-200 text-rose-900'
-                              : 'bg-slate-50 border-slate-200 text-slate-700'
-                          }`}
+                        <select
+                          value={v.status}
+                          onChange={(e) => saveVehicle({ ...v, status: e.target.value })}
+                          className="text-xs font-bold border border-slate-300 rounded px-2 py-1 bg-white"
                         >
-                          <div className="font-bold flex justify-between">
-                            <span>{v.id} — {v.makeModel}</span>
-                            <span>{isDue ? 'SERVICE DUE' : 'OK'}</span>
-                          </div>
-                          <p className="mt-1">
-                            Next service in <strong>{kmLeft.toLocaleString()} km</strong> (at{' '}
-                            {v.nextServiceOdo.toLocaleString()} km) • Rego Exp: <strong>{v.regoExpiry}</strong>
-                          </p>
+                          <option>Available</option>
+                          <option>On Hire</option>
+                          <option>Maintenance</option>
+                          <option>Inactive</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Subsidiaries 02 & 03</span>
+                      <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch Inventory</h3>
+                    </div>
+                    <button onClick={() => setCatModal({ open: true, data: null })} className="px-3 py-1.5 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold flex items-center gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Add Product
+                    </button>
+                  </div>
+                  <div className="space-y-2.5">
+                    {catalog.map(c => (
+                      <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50/60">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-[#9A7B3E]">{c.division}</span>
+                          <div className="font-bold text-sm">{c.name}</div>
+                          <div className="text-xs text-slate-500">{formatPGK(c.unitPrice)} • Stock: {c.stock}</div>
                         </div>
-                      );
-                    })}
+                        <button onClick={() => setCatModal({ open: true, data: c })} className="px-2.5 py-1 rounded bg-white border border-slate-300 text-xs font-bold">
+                          Edit
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ====================================================================
-            TAB 2: FLEET REGISTRY & CAR SCHEDULES
-        ==================================================================== */}
-        {activeTab === 'fleet' && (
-          <div className="space-y-6">
-            {/* Header Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-[#162238]">Fleet Registry & Booking Calendar</h2>
-                <p className="text-xs text-slate-600">
-                  Manage vehicle specs, odometers, MVIL/Rego expiry dates, and prevent double-bookings across Kavieng.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => exportToCSV('Tunz_Cars_Fleet_Registry.csv', vehicles)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-[#162238] hover:bg-slate-50 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" /> Export Fleet CSV
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingVehicle(null);
-                    setShowVehicleModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#162238] text-white text-xs font-semibold hover:bg-[#2B3A52] cursor-pointer"
-                >
-                  <Plus className="w-4 h-4 text-[#D4AF37]" /> Add New Vehicle
-                </button>
-              </div>
-            </div>
-
-            {/* VISUAL CAR SCHEDULE TIMELINE (14-DAY MATRIX) */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 overflow-hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="text-base font-bold text-[#162238] flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-[#9A7B3E]" />
-                    14-Day Car Schedule & Availability Timeline
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Confirmed Proforma Invoices & Paid Receipts automatically lock dates to prevent double-booking.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <label className="font-semibold text-slate-600">Start Date:</label>
-                  <input
-                    type="date"
-                    value={scheduleStartDate}
-                    onChange={(e) => setScheduleStartDate(e.target.value)}
-                    className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse min-w-[820px]">
-                  <thead>
-                    <tr className="bg-[#162238] text-white">
-                      <th className="p-2.5 text-left font-bold border border-slate-700 w-48">Vehicle</th>
-                      {scheduleDays.map((day) => (
-                        <th key={day} className="p-1.5 text-center font-semibold border border-slate-700">
-                          <div>{day.slice(5)}</div>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vehicles.map((v) => (
-                      <tr key={v.id} className="border-b border-slate-200">
-                        <td className="p-2.5 bg-[#F7F6F2] border border-slate-200">
-                          <div className="font-bold text-[#162238]">{v.id}</div>
-                          <div className="text-[11px] text-slate-600 truncate max-w-[170px]">{v.makeModel}</div>
-                        </td>
-                        {scheduleDays.map((day) => {
-                          const booking = billingDocs.find(
-                            (d) =>
-                              d.vehicleId === v.id &&
-                              d.docType !== 'Quote' &&
-                              day >= d.startDate &&
-                              day <= d.endDate
-                          );
-                          const isMaint = v.status === 'Maintenance' && !booking;
-
-                          return (
-                            <td
-                              key={day}
-                              onClick={() => {
-                                if (booking) {
-                                  setPreviewDoc(booking);
-                                } else {
-                                  setEditingDoc({
-                                    docType: 'Proforma',
-                                    date: new Date().toISOString().slice(0, 10),
-                                    validUntil: '2026-12-18',
-                                    clientName: '',
-                                    contactPerson: '',
-                                    clientPhone: '',
-                                    clientEmail: '',
-                                    vehicleId: v.id,
-                                    hireType: 'Self-Drive',
-                                    startDate: day,
-                                    endDate: day,
-                                    days: 1,
-                                    dailyRate: v.dailyRate,
-                                    extraFees: 0,
-                                    extraDesc: '',
-                                    bondAmount: 0,
-                                    status: 'Pending',
-                                    paymentMethod: 'BSP Transfer',
-                                    notes: ''
-                                  });
-                                  setShowDocModal(true);
-                                }
-                              }}
-                              title={
-                                booking
-                                  ? `${booking.id}: ${booking.clientName} (${booking.startDate} to ${booking.endDate})`
-                                  : isMaint
-                                  ? 'Vehicle in Maintenance'
-                                  : `Click to schedule ${v.id} on ${day}`
-                              }
-                              className={`p-1.5 text-center border border-slate-200 cursor-pointer transition ${
-                                booking
-                                  ? booking.docType === 'Receipt'
-                                    ? 'bg-emerald-600 text-white font-bold hover:bg-emerald-700'
-                                    : 'bg-amber-500 text-white font-bold hover:bg-amber-600'
-                                  : isMaint
-                                  ? 'bg-rose-100 text-rose-700 font-semibold'
-                                  : 'bg-white hover:bg-emerald-50 text-slate-400'
-                              }`}
-                            >
-                              {booking ? booking.clientName.slice(0, 4) : isMaint ? 'MNT' : '+'}
-                            </td>
-                          );
-                        })}
+          {adminTab === 'requests' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <h3 className="font-bold text-slate-900 mb-4">Incoming Bookings & Wholesale Orders (All Divisions)</h3>
+              {inquiries.length === 0 ? (
+                <p className="text-sm text-slate-500 py-8 text-center">No client requests submitted yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                      <tr>
+                        <th className="p-3">Ref / Division</th>
+                        <th className="p-3">Client / Organization</th>
+                        <th className="p-3">Item / Vehicle</th>
+                        <th className="p-3">Total (GST Incl.)</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 mt-3 text-[11px] text-slate-600">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-emerald-600 inline-block" /> Paid Booking (Receipt)
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Reserved / Proforma Invoice
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-rose-100 border border-rose-300 inline-block" /> Workshop Maintenance
-                </span>
-                <span className="text-slate-400 italic">Tip: Click any open "+" cell to schedule a hire on that date.</span>
-              </div>
-            </div>
-
-            {/* FLEET REGISTRY TABLE */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#162238] text-white uppercase tracking-wider">
-                    <tr>
-                      <th className="p-3.5">Vehicle ID & Plate</th>
-                      <th className="p-3.5">Make, Model & Specs</th>
-                      <th className="p-3.5">Daily Rate (GST Incl.)</th>
-                      <th className="p-3.5">Odometer / Next Service</th>
-                      <th className="p-3.5">Rego & MVIL Expiry</th>
-                      <th className="p-3.5">Status</th>
-                      <th className="p-3.5 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {vehicles.map((v) => {
-                      const kmRem = v.nextServiceOdo - v.odometer;
-                      return (
-                        <tr key={v.id} className="hover:bg-[#F7F6F2]/70">
-                          <td className="p-3.5">
-                            <div className="font-bold text-[#162238]">{v.id}</div>
-                            <div className="text-slate-500 font-medium">{v.plate}</div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {inquiries.map(inq => (
+                        <tr key={inq.id}>
+                          <td className="p-3">
+                            <div className="font-mono text-xs font-bold">{inq.id}</div>
+                            <span className="text-[11px] font-bold text-[#9A7B3E]">{inq.division}</span>
                           </td>
-                          <td className="p-3.5">
-                            <div className="font-bold text-[#162238]">{v.makeModel}</div>
-                            <div className="text-slate-500">
-                              {v.color} • {v.category} ({v.fuelType})
-                            </div>
+                          <td className="p-3">
+                            <div className="font-bold">{inq.clientName}</div>
+                            <div className="text-xs text-slate-500">{inq.organization} • {inq.phone}</div>
                           </td>
-                          <td className="p-3.5 font-bold text-[#162238]">{formatPGK(v.dailyRate)}</td>
-                          <td className="p-3.5">
-                            <div className="font-semibold text-[#162238]">{v.odometer.toLocaleString()} km</div>
-                            <div className={kmRem <= 1500 ? 'text-[#9E2A2B] font-semibold' : 'text-slate-500'}>
-                              Next: {v.nextServiceOdo.toLocaleString()} km ({kmRem.toLocaleString()} km left)
-                            </div>
+                          <td className="p-3 text-xs">
+                            <div className="font-bold">{inq.itemSummary} (×{inq.qty})</div>
+                            <div className="text-slate-500">{inq.details}</div>
                           </td>
-                          <td className="p-3.5 font-medium text-slate-700">{v.regoExpiry}</td>
-                          <td className="p-3.5">
-                            <StatusBadge status={v.status} />
+                          <td className="p-3 font-extrabold">{formatPGK(inq.totalAmount)}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                              inq.status === 'Approved & Invoiced' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>{inq.status}</span>
                           </td>
-                          <td className="p-3.5 text-right">
-                            <button
-                              onClick={() => {
-                                setEditingVehicle(v);
-                                setShowVehicleModal(true);
-                              }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-[#162238] hover:bg-slate-100 cursor-pointer"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" /> Edit
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ====================================================================
-            TAB 3: QUOTES, PROFORMA INVOICES & RECEIPTS (BILLING HUB)
-        ==================================================================== */}
-        {activeTab === 'billing' && (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-[#162238]">Quotes, Proforma Invoices & Official Receipts</h2>
-                <p className="text-xs text-slate-600">
-                  Seamless workflow: Create Quote (TC-QT) → Convert to Proforma Invoice (TC-PI) → Record Payment & Issue Official Receipt (TC-RCT).
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() =>
-                    exportToCSV(
-                      'Tunz_Cars_Billing_Register.csv',
-                      billingDocs.map((d) => ({
-                        DocID: d.id,
-                        Type: d.docType,
-                        Date: d.date,
-                        Client: d.clientName,
-                        Vehicle: d.vehicleId,
-                        StartDate: d.startDate,
-                        EndDate: d.endDate,
-                        Days: d.days,
-                        GrossPGK: calcDocTotals(d).gross.toFixed(2),
-                        GST_PGK: calcDocTotals(d).gst.toFixed(2),
-                        Status: d.status
-                      }))
-                    )
-                  }
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-[#162238] hover:bg-slate-50 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" /> Export Billing CSV
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingDoc(null);
-                    setShowDocModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#9A7B3E] hover:bg-[#b08d47] text-white text-xs font-semibold shadow cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" /> Create Document
-                </button>
-              </div>
-            </div>
-
-            {/* FILTER & SEARCH BAR */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex flex-wrap gap-1.5">
-                {['All', 'Quote', 'Proforma', 'Receipt'].map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => setDocFilterType(type)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                      docFilterType === type
-                        ? 'bg-[#162238] text-[#D4AF37]'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {type === 'All' ? 'All Documents' : `${type}s`}
-                  </button>
-                ))}
-              </div>
-
-              <div className="relative w-full sm:w-72">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search TC-QT / TC-PI / Client..."
-                  value={docSearch}
-                  onChange={(e) => setDocSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-[#9A7B3E]"
-                />
-              </div>
-            </div>
-
-            {/* BILLING DOCUMENTS TABLE */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#162238] text-white uppercase tracking-wider">
-                    <tr>
-                      <th className="p-3.5">Document # & Type</th>
-                      <th className="p-3.5">Client / Organization</th>
-                      <th className="p-3.5">Vehicle & Hire Dates</th>
-                      <th className="p-3.5">Total (GST Incl.)</th>
-                      <th className="p-3.5">Status</th>
-                      <th className="p-3.5 text-right">Workflow Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {filteredDocs.map((doc) => {
-                      const totals = calcDocTotals(doc);
-                      const veh = vehicles.find((v) => v.id === doc.vehicleId);
-                      return (
-                        <tr key={doc.id} className="hover:bg-[#F7F6F2]/70">
-                          <td className="p-3.5">
-                            <div className="font-bold text-[#162238]">{doc.id}</div>
-                            <div className="mt-1 flex items-center gap-1.5">
-                              <StatusBadge status={doc.docType} />
-                              <span className="text-slate-400">{doc.date}</span>
-                            </div>
-                          </td>
-                          <td className="p-3.5">
-                            <div className="font-bold text-[#162238]">{doc.clientName}</div>
-                            <div className="text-slate-500">{doc.contactPerson}</div>
-                          </td>
-                          <td className="p-3.5">
-                            <div className="font-semibold text-[#162238]">
-                              {doc.vehicleId} {veh ? `— ${veh.makeModel}` : ''}
-                            </div>
-                            <div className="text-slate-500">
-                              {doc.startDate} to {doc.endDate} ({doc.days}d @ {formatPGK(doc.dailyRate)})
-                            </div>
-                          </td>
-                          <td className="p-3.5">
-                            <div className="font-extrabold text-[#162238]">{formatPGK(totals.gross)}</div>
-                            <div className="text-[11px] text-slate-500">GST: {formatPGK(totals.gst)}</div>
-                          </td>
-                          <td className="p-3.5">
-                            <StatusBadge status={doc.status} />
-                          </td>
-                          <td className="p-3.5">
-                            <div className="flex flex-wrap items-center justify-end gap-1.5">
-                              {/* Preview & Print Official Document */}
-                              <button
-                                onClick={() => setPreviewDoc(doc)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#162238] text-white hover:bg-[#2B3A52] font-semibold cursor-pointer"
-                                title="Preview & Print Official Tunz Cars Document"
-                              >
-                                <Printer className="w-3.5 h-3.5 text-[#D4AF37]" /> Print / View
+                          <td className="p-3">
+                            {inq.status === 'Pending Approval' && (
+                              <button onClick={() => approveInquiry(inq)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+                                Approve & Issue Invoice
                               </button>
-
-                              {/* Edit */}
-                              <button
-                                onClick={() => {
-                                  setEditingDoc(doc);
-                                  setShowDocModal(true);
-                                }}
-                                className="p-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 cursor-pointer"
-                                title="Edit Document"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-
-                              {/* Convert Quote -> Proforma Invoice */}
-                              {doc.docType === 'Quote' && (
-                                <button
-                                  onClick={() => handleConvertQuoteToProforma(doc)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold cursor-pointer"
-                                >
-                                  To Proforma <ArrowRight className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-
-                              {/* Record Payment -> Official Receipt */}
-                              {doc.docType === 'Proforma' && doc.status !== 'Paid' && (
-                                <button
-                                  onClick={() => {
-                                    setPaymentPrefillDoc(doc);
-                                    setShowPaymentModal(true);
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold cursor-pointer"
-                                >
-                                  Record Payment <Check className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ====================================================================
-            TAB 4: PAYMENTS LEDGER
-        ==================================================================== */}
-        {activeTab === 'payments' && (
-          <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-[#162238]">Payments & Security Bond Ledger</h2>
-                <p className="text-xs text-slate-600">
-                  Ring-fenced rental collections deposited into <strong>BSP Kavieng Account # {COMPANY_INFO.bspAccount}</strong>.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => exportToCSV('Tunz_Cars_Payments_Ledger.csv', payments)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-[#162238] hover:bg-slate-50 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" /> Export Payments CSV
-                </button>
-                <button
-                  onClick={() => {
-                    setPaymentPrefillDoc(null);
-                    setShowPaymentModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" /> Log Incoming Payment
-                </button>
-              </div>
-            </div>
-
-            {/* SUMMARY STRIP */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white rounded-xl p-4 border border-slate-200">
-                <span className="text-xs font-bold uppercase text-slate-500">Total Rental Revenue Collected</span>
-                <p className="text-2xl font-extrabold text-emerald-700 mt-1">{formatPGK(metrics.totalCollected)}</p>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-slate-200">
-                <span className="text-xs font-bold uppercase text-slate-500">Outstanding Receivables (Pending)</span>
-                <p className="text-2xl font-extrabold text-[#9E2A2B] mt-1">{formatPGK(metrics.unpaidReceivables)}</p>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-slate-200">
-                <span className="text-xs font-bold uppercase text-slate-500">Refundable Security Bonds Held</span>
-                <p className="text-2xl font-extrabold text-[#162238] mt-1">{formatPGK(metrics.totalBondsHeld)}</p>
-              </div>
-            </div>
-
-            {/* PAYMENTS TABLE */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#162238] text-white uppercase tracking-wider">
-                    <tr>
-                      <th className="p-3.5">Payment ID & Date</th>
-                      <th className="p-3.5">Invoice / Receipt Ref</th>
-                      <th className="p-3.5">Client / Payer</th>
-                      <th className="p-3.5">Method & BSP Ref</th>
-                      <th className="p-3.5">Hire Paid (PGK)</th>
-                      <th className="p-3.5">Bond (PGK)</th>
-                      <th className="p-3.5">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {payments.map((p) => (
-                      <tr key={p.id} className="hover:bg-[#F7F6F2]/70">
-                        <td className="p-3.5">
-                          <div className="font-bold text-[#162238]">{p.id}</div>
-                          <div className="text-slate-500">{p.date}</div>
-                        </td>
-                        <td className="p-3.5 font-semibold text-[#9A7B3E]">{p.docRef || 'Direct Deposit'}</td>
-                        <td className="p-3.5">
-                          <div className="font-bold text-[#162238]">{p.clientName}</div>
-                          <div className="text-slate-500">{p.vehicleId}</div>
-                        </td>
-                        <td className="p-3.5">
-                          <div className="font-semibold text-[#162238]">{p.method}</div>
-                          <div className="text-slate-500">{p.referenceNo || p.accountDeposited}</div>
-                        </td>
-                        <td className="p-3.5 font-extrabold text-emerald-700">{formatPGK(p.amountPaid)}</td>
-                        <td className="p-3.5 font-semibold text-slate-700">{formatPGK(p.bondCollected)}</td>
-                        <td className="p-3.5">
-                          <StatusBadge status={p.status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ====================================================================
-            TAB 5: FUEL, MAINTENANCE & OPERATING EXPENSES
-        ==================================================================== */}
-        {activeTab === 'expenses' && (
-          <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-[#162238]">Fuel, Servicing & Fleet Maintenance Log</h2>
-                <p className="text-xs text-slate-600">
-                  Track fuel consumption (km/L), workshop oil changes, tyres, and MVIL/Rego renewals per vehicle.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => exportToCSV('Tunz_Cars_Fuel_Maintenance_Log.csv', expenses)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-[#162238] hover:bg-slate-50 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" /> Export Expenses CSV
-                </button>
-                <button
-                  onClick={() => setShowExpenseModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#9E2A2B] hover:bg-red-800 text-white text-xs font-semibold shadow cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" /> Log Fuel / Expense
-                </button>
-              </div>
-            </div>
-
-            {/* FILTERS */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap gap-1.5">
-                {['All', 'Fuel', 'Routine Service', 'Repairs & Parts', 'Tyres & Alignment', 'Rego & MVIL'].map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setExpenseFilterCat(cat)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                      expenseFilterCat === cat
-                        ? 'bg-[#162238] text-[#D4AF37]'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-2 text-xs">
-                <Filter className="w-3.5 h-3.5 text-slate-500" />
-                <select
-                  value={expenseFilterVeh}
-                  onChange={(e) => setExpenseFilterVeh(e.target.value)}
-                  className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-white"
-                >
-                  <option value="All">All Vehicles</option>
-                  {vehicles.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.id} — {v.makeModel}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* EXPENSES TABLE */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#162238] text-white uppercase tracking-wider">
-                    <tr>
-                      <th className="p-3.5">Date & ID</th>
-                      <th className="p-3.5">Vehicle</th>
-                      <th className="p-3.5">Category</th>
-                      <th className="p-3.5">Vendor & Description</th>
-                      <th className="p-3.5">Fuel / Efficiency</th>
-                      <th className="p-3.5">Odometer</th>
-                      <th className="p-3.5 text-right">Amount (PGK)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {filteredExpenses.map((e) => {
-                      const kmDriven =
-                        e.category === 'Fuel' && e.odometer > e.prevOdometer && e.prevOdometer > 0
-                          ? e.odometer - e.prevOdometer
-                          : 0;
-                      const kmPerLitre = kmDriven > 0 && e.litres > 0 ? (kmDriven / e.litres).toFixed(1) : null;
-
-                      return (
-                        <tr key={e.id} className="hover:bg-[#F7F6F2]/70">
-                          <td className="p-3.5">
-                            <div className="font-bold text-[#162238]">{e.date}</div>
-                            <div className="text-slate-400">{e.id}</div>
-                          </td>
-                          <td className="p-3.5 font-bold text-[#162238]">{e.vehicleId}</td>
-                          <td className="p-3.5">
-                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#F7F6F2] border border-slate-300 text-[#162238]">
-                              {e.category}
-                            </span>
-                          </td>
-                          <td className="p-3.5">
-                            <div className="font-bold text-[#162238]">{e.vendor}</div>
-                            <div className="text-slate-500">{e.description}</div>
-                          </td>
-                          <td className="p-3.5">
-                            {e.category === 'Fuel' && e.litres > 0 ? (
-                              <div>
-                                <span className="font-semibold text-[#162238]">{e.litres} L</span>
-                                {kmPerLitre && (
-                                  <span className="ml-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                                    {kmPerLitre} km/L
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-400">—</span>
                             )}
                           </td>
-                          <td className="p-3.5 font-medium text-slate-700">
-                            {e.odometer > 0 ? `${Number(e.odometer).toLocaleString()} km` : '—'}
-                          </td>
-                          <td className="p-3.5 text-right font-extrabold text-[#9E2A2B]">{formatPGK(e.amount)}</td>
                         </tr>
-                      );
-                    })}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {adminTab === 'proofs' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <div className="mb-4">
+                <h3 className="font-bold text-slate-900">Customer Uploaded Payment Proofs & Bank References</h3>
+                <p className="text-xs text-slate-500">Verify BSP transfer references & receipt slips to post into the ledger and upgrade invoices to Official Receipts.</p>
+              </div>
+              {paymentSubmissions.length === 0 ? (
+                <p className="text-sm text-slate-500 py-8 text-center">No customer payment proofs uploaded yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                      <tr>
+                        <th className="p-3">Proof ID / Division</th>
+                        <th className="p-3">Payer & Linked Ref</th>
+                        <th className="p-3">Bank Ref / Method</th>
+                        <th className="p-3">Amount (PGK)</th>
+                        <th className="p-3">Slip</th>
+                        <th className="p-3">Status / Verify</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {paymentSubmissions.map(sub => (
+                        <tr key={sub.id}>
+                          <td className="p-3">
+                            <div className="font-mono text-xs font-bold">{sub.id}</div>
+                            <span className="text-[11px] font-bold text-[#9A7B3E]">{sub.division} • {sub.paymentDate}</span>
+                          </td>
+                          <td className="p-3">
+                            <div className="font-bold">{sub.payerName}</div>
+                            <div className="text-xs text-slate-500">{sub.phone} • Ref: <span className="font-mono">{sub.bookingOrDocRef || 'N/A'}</span></div>
+                          </td>
+                          <td className="p-3 text-xs">
+                            <div className="font-mono font-bold text-[#162238]">{sub.bankReference}</div>
+                            <div className="text-slate-500">{sub.method}</div>
+                          </td>
+                          <td className="p-3 font-extrabold text-emerald-700">{formatPGK(sub.amountPaid)}</td>
+                          <td className="p-3">
+                            {sub.receiptImage ? (
+                              <button
+                                onClick={() => setProofViewer(sub)}
+                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-xs font-bold flex items-center gap-1"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> View Slip
+                              </button>
+                            ) : (
+                              <span className="text-xs text-slate-400">No Image</span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {sub.status === 'Pending Verification' ? (
+                              <button
+                                onClick={() => verifyPaymentSubmission(sub)}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                              >
+                                Verify & Issue Receipt
+                              </button>
+                            ) : (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                                {sub.status}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {adminTab === 'cars' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-900">Tunz Cars — Fleet Registry & Rate Controls</h3>
+                  <p className="text-xs text-slate-500">Add, edit, or delete vehicles and update daily PGK rates.</p>
+                </div>
+                <button onClick={() => setVehModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
+                  <Plus className="w-4 h-4" /> Add Vehicle
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                      <th className="p-3">ID / Plate</th>
+                      <th className="p-3">Vehicle</th>
+                      <th className="p-3">Daily Rate</th>
+                      <th className="p-3">Odometer / Service</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3 text-right">Controls</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {vehicles.map(v => (
+                      <tr key={v.id}>
+                        <td className="p-3 font-mono text-xs font-bold">{v.id} ({v.plate})</td>
+                        <td className="p-3">
+                          <div className="font-bold">{v.name}</div>
+                          <div className="text-xs text-slate-500">{v.seats}</div>
+                        </td>
+                        <td className="p-3 font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</td>
+                        <td className="p-3 text-xs">{Number(v.odometer).toLocaleString()} / {Number(v.nextServiceKm).toLocaleString()} km</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100">{v.status}</span></td>
+                        <td className="p-3 text-right space-x-2">
+                          <button onClick={() => setVehModal({ open: true, data: v })} className="p-1.5 rounded bg-blue-50 text-blue-700"><Edit2 className="w-4 h-4" /></button>
+                          <button onClick={() => setDeleteConfirm({ col: 'vehicles', id: v.id, name: v.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
-          </div>
-        )}
-      </main>
+          )}
 
-      {/* ======================================================================
-          FOOTER
-      ====================================================================== */}
-      <footer className="bg-[#162238] text-slate-300 text-xs py-4 px-4 sm:px-6 border-t border-slate-800 mt-10 no-print">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div>
-            <strong className="text-white">{COMPANY_INFO.name}</strong> — {COMPANY_INFO.parent} • IPA #{' '}
-            {COMPANY_INFO.ipaReg} • IRC TIN: {COMPANY_INFO.ircTin}
-          </div>
-          <div className="text-slate-400">
-            {COMPANY_INFO.locations} • {COMPANY_INFO.phone}
-          </div>
-        </div>
-      </footer>
-
-      {/* ======================================================================
-          MODAL 1: CREATE / EDIT QUOTE, PROFORMA INVOICE, OR RECEIPT
-      ====================================================================== */}
-      {showDocModal && (
-        <DocumentFormModal
-          vehicles={vehicles}
-          initialDoc={editingDoc}
-          onClose={() => {
-            setShowDocModal(false);
-            setEditingDoc(null);
-          }}
-          onSave={handleSaveBillingDoc}
-        />
-      )}
-
-      {/* ======================================================================
-          MODAL 2: OFFICIAL PRINTABLE DOCUMENT PREVIEW (QUOTE / PROFORMA / RECEIPT)
-      ====================================================================== */}
-      {previewDoc && (
-        <DocumentPrintModal
-          doc={previewDoc}
-          vehicles={vehicles}
-          onClose={() => setPreviewDoc(null)}
-        />
-      )}
-
-      {/* ======================================================================
-          MODAL 3: ADD / EDIT VEHICLE
-      ====================================================================== */}
-      {showVehicleModal && (
-        <VehicleFormModal
-          initialVehicle={editingVehicle}
-          onClose={() => {
-            setShowVehicleModal(false);
-            setEditingVehicle(null);
-          }}
-          onSave={handleSaveVehicle}
-        />
-      )}
-
-      {/* ======================================================================
-          MODAL 4: LOG INCOMING PAYMENT
-      ====================================================================== */}
-      {showPaymentModal && (
-        <PaymentFormModal
-          billingDocs={billingDocs}
-          vehicles={vehicles}
-          prefillDoc={paymentPrefillDoc}
-          onClose={() => {
-            setShowPaymentModal(false);
-            setPaymentPrefillDoc(null);
-          }}
-          onSave={handleLogPayment}
-        />
-      )}
-
-      {/* ======================================================================
-          MODAL 5: LOG FUEL / MAINTENANCE EXPENSE
-      ====================================================================== */}
-      {showExpenseModal && (
-        <ExpenseFormModal
-          vehicles={vehicles}
-          onClose={() => setShowExpenseModal(false)}
-          onSave={handleSaveExpense}
-        />
-      )}
-
-      {/* ======================================================================
-          MODAL 6: RESET DEMO DATA CONFIRMATION
-      ====================================================================== */}
-      {showResetConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
-            <h3 className="text-lg font-bold text-[#162238] flex items-center gap-2">
-              <RotateCcw className="w-5 h-5 text-[#9E2A2B]" /> Reset Demo Data?
-            </h3>
-            <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-              This will restore the default Kavieng fleet registry (Subaru XV, Nissan Sylphy, Isuzu Bighorn) and sample
-              hospital/LLG billing records. Any custom entries you added will be replaced.
-            </p>
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                onClick={() => setShowResetConfirm(false)}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleResetDemoData}
-                className="px-4 py-2 rounded-lg bg-[#9E2A2B] text-white text-xs font-semibold hover:bg-red-800 cursor-pointer"
-              >
-                Yes, Restore Defaults
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
-// SUB-COMPONENT: DOCUMENT FORM MODAL (QUOTE / PROFORMA / RECEIPT)
-// ============================================================================
-function DocumentFormModal({ vehicles, initialDoc, onClose, onSave }) {
-  const defaultVeh = vehicles[0] || { id: 'TC-VEH-01', dailyRate: 250 };
-  const [form, setForm] = useState(
-    initialDoc || {
-      docType: 'Quote',
-      date: new Date().toISOString().slice(0, 10),
-      validUntil: '2026-12-18',
-      clientName: '',
-      contactPerson: '',
-      clientPhone: '',
-      clientEmail: '',
-      vehicleId: defaultVeh.id,
-      hireType: 'Self-Drive',
-      startDate: '2026-11-20',
-      endDate: '2026-11-23',
-      days: 3,
-      dailyRate: defaultVeh.dailyRate,
-      extraFees: 0,
-      extraDesc: '',
-      bondAmount: 0,
-      status: 'Pending',
-      paymentMethod: 'BSP Transfer',
-      notes: ''
-    }
-  );
-
-  // Auto-calculate days when startDate or endDate changes
-  const handleDateChange = (field, val) => {
-    const next = { ...form, [field]: val };
-    if (next.startDate && next.endDate) {
-      const s = new Date(next.startDate);
-      const e = new Date(next.endDate);
-      const diff = Math.round((e - s) / (1000 * 60 * 60 * 24));
-      next.days = diff > 0 ? diff : 1;
-    }
-    setForm(next);
-  };
-
-  const handleVehicleSelect = (vehId) => {
-    const found = vehicles.find((v) => v.id === vehId);
-    setForm({
-      ...form,
-      vehicleId: vehId,
-      dailyRate: found ? found.dailyRate : form.dailyRate
-    });
-  };
-
-  const totals = calcDocTotals(form);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!form.clientName.trim()) return;
-    onSave({
-      ...form,
-      status: form.docType === 'Receipt' ? 'Paid' : form.status
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6">
-        <div className="bg-[#162238] text-white px-6 py-4 flex items-center justify-between border-b-2 border-[#9A7B3E]">
-          <div>
-            <h3 className="text-base font-bold">
-              {initialDoc?.id ? `Edit Document (${initialDoc.id})` : 'Create New Tunz Cars Billing Document'}
-            </h3>
-            <p className="text-xs text-slate-300">All rates in PNG Kina (PGK) with automatic 10% GST breakdown</p>
-          </div>
-          <button onClick={onClose} className="text-slate-300 hover:text-white cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
-          {/* Document Type & Dates */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Document Type</label>
-              <select
-                value={form.docType}
-                onChange={(e) => setForm({ ...form, docType: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-semibold bg-white"
-              >
-                <option value="Quote">Quotation (TC-QT)</option>
-                <option value="Proforma">Proforma Invoice (TC-PI)</option>
-                <option value="Receipt">Official Receipt (TC-RCT)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Issue Date</label>
-              <input
-                type="date"
-                required
-                value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Valid Until</label>
-              <input
-                type="date"
-                value={form.validUntil}
-                onChange={(e) => setForm({ ...form, validUntil: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-
-          {/* Client Details */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Client / Organization Name *</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g., Kavieng General Hospital / Murat LLG"
-                value={form.clientName}
-                onChange={(e) => setForm({ ...form, clientName: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Attention / Authorized Officer</label>
-              <input
-                type="text"
-                placeholder="Officer Name & Title"
-                value={form.contactPerson}
-                onChange={(e) => setForm({ ...form, contactPerson: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Client Phone / WhatsApp</label>
-              <input
-                type="text"
-                placeholder="+675 ..."
-                value={form.clientPhone}
-                onChange={(e) => setForm({ ...form, clientPhone: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Client Email</label>
-              <input
-                type="email"
-                placeholder="client@organization.pg"
-                value={form.clientEmail}
-                onChange={(e) => setForm({ ...form, clientEmail: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-
-          {/* Vehicle & Rental Schedule */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Assigned Vehicle</label>
-              <select
-                value={form.vehicleId}
-                onChange={(e) => handleVehicleSelect(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-semibold bg-white"
-              >
-                {vehicles.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.id} — {v.makeModel}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Hire Start Date</label>
-              <input
-                type="date"
-                required
-                value={form.startDate}
-                onChange={(e) => handleDateChange('startDate', e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Hire End Date</label>
-              <input
-                type="date"
-                required
-                value={form.endDate}
-                onChange={(e) => handleDateChange('endDate', e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-
-          {/* Pricing & Extras */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Rental Days</label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={form.days}
-                onChange={(e) => setForm({ ...form, days: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-bold"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Daily Rate (K)</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={form.dailyRate}
-                onChange={(e) => setForm({ ...form, dailyRate: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-bold"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Extra Fees (K)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={form.extraFees}
-                onChange={(e) => setForm({ ...form, extraFees: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Hire Mode</label>
-              <select
-                value={form.hireType}
-                onChange={(e) => setForm({ ...form, hireType: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
-              >
-                <option value="Self-Drive">Self-Drive</option>
-                <option value="Chauffeur-Driven">Chauffeur-Driven</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Extra Fee Description (Airport / Fuel / Driver)</label>
-              <input
-                type="text"
-                placeholder="e.g., Kavieng Airport Return Transfer"
-                value={form.extraDesc}
-                onChange={(e) => setForm({ ...form, extraDesc: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Notes / Booking Reference</label>
-              <input
-                type="text"
-                placeholder="Optional internal or LPO notes"
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-
-          {/* LIVE PGK TOTALS PREVIEW BOX */}
-          <div className="bg-[#F7F6F2] rounded-xl p-4 border border-slate-200 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <span className="text-slate-500 block">Subtotal (Excl. GST)</span>
-              <strong className="text-sm text-[#162238]">{formatPGK(totals.subtotalExcl)}</strong>
-            </div>
-            <div>
-              <span className="text-slate-500 block">10% PNG GST Included</span>
-              <strong className="text-sm text-[#9A7B3E]">{formatPGK(totals.gst)}</strong>
-            </div>
-            <div className="text-right">
-              <span className="text-slate-500 block">Gross Total Payable (PGK)</span>
-              <strong className="text-lg font-extrabold text-[#162238]">{formatPGK(totals.gross)}</strong>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-lg bg-[#162238] text-white font-semibold hover:bg-[#2B3A52] cursor-pointer"
-            >
-              Save {form.docType}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// SUB-COMPONENT: PRINTABLE OFFICIAL TUNZ CARS DOCUMENT PREVIEW MODAL
-// ============================================================================
-function DocumentPrintModal({ doc, vehicles, onClose }) {
-  const totals = calcDocTotals(doc);
-  const veh = vehicles.find((v) => v.id === doc.vehicleId);
-
-  const docTitle =
-    doc.docType === 'Quote'
-      ? 'QUOTATION'
-      : doc.docType === 'Proforma'
-      ? 'PROFORMA INVOICE'
-      : 'OFFICIAL RECEIPT';
-
-  const docSub =
-    doc.docType === 'Quote'
-      ? 'OFFICIAL VEHICLE HIRE & FLEET ESTIMATE'
-      : doc.docType === 'Proforma'
-      ? 'VEHICLE HIRE & FLEET RENTAL INVOICE'
-      : 'VEHICLE HIRE PAYMENT RECEIPT';
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-300 overflow-hidden my-6">
-        {/* Top Action Toolbar (Hidden when printing) */}
-        <div className="bg-[#2B3A52] text-white px-5 py-3 flex items-center justify-between no-print">
-          <span className="text-xs font-semibold">Official A4 Document Preview — {doc.id}</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#9A7B3E] hover:bg-[#b08d47] text-white text-xs font-bold cursor-pointer"
-            >
-              <Printer className="w-4 h-4" /> Print / Save PDF
-            </button>
-            <button onClick={onClose} className="p-1.5 text-slate-300 hover:text-white cursor-pointer">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* PRINTABLE A4 DOCUMENT SHEET */}
-        <div id="printable-document" className="p-8 bg-white text-[#162238] space-y-5 text-xs">
-          {/* Header Banner */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b-2 border-[#162238]">
-            <div className="flex items-center gap-3.5">
-              <TunzCarsLogoSVG size={64} />
-              <div>
-                <h2 className="text-2xl font-extrabold tracking-tight text-[#162238]">
-                  TUNZ <span className="text-[#9A7B3E]">CARS</span>
-                </h2>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-[#9E2A2B]">
-                  {COMPANY_INFO.parent}
-                </p>
-                <p className="text-[11px] text-slate-600 mt-1">
-                  Phone: {COMPANY_INFO.phone} • Email: {COMPANY_INFO.email}
-                </p>
-                <p className="text-[11px] font-semibold text-[#162238]">
-                  Parent IPA Reg #: {COMPANY_INFO.ipaReg} | IRC TIN: {COMPANY_INFO.ircTin}
-                </p>
-              </div>
-            </div>
-
-            <div className="sm:text-right">
-              <div className="inline-block px-3 py-1 rounded bg-[#162238] text-[#D4AF37] font-extrabold text-base tracking-wide">
-                {docTitle}
-              </div>
-              <p className="text-[10px] font-bold text-slate-500 mt-1">{docSub}</p>
-              <div className="mt-2 space-y-0.5 text-[11px]">
+          {adminTab === 'catalog' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex justify-between items-center mb-4">
                 <div>
-                  <span className="text-slate-500">Document No.:</span>{' '}
-                  <strong className="text-[#162238]">{doc.id}</strong>
+                  <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch Product Catalog</h3>
+                  <p className="text-xs text-slate-500">Manage soap SKUs, resort amenity boxes, refurbished laptops & custom apparel.</p>
                 </div>
-                <div>
-                  <span className="text-slate-500">Date Issued:</span> <strong>{doc.date}</strong>
-                </div>
-                {doc.docType !== 'Receipt' && (
-                  <div>
-                    <span className="text-slate-500">Valid Until:</span> <strong>{doc.validUntil}</strong>
-                  </div>
-                )}
+                <button onClick={() => setCatModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold flex items-center gap-1.5">
+                  <Plus className="w-4 h-4" /> Add Product / SKU
+                </button>
               </div>
-            </div>
-          </div>
-
-          {/* Client & Hire Details Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3.5 rounded-lg bg-[#F7F6F2] border border-slate-200">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#9A7B3E] mb-1">
-                {doc.docType === 'Receipt' ? 'Received With Thanks From:' : 'Prepared For / Bill To:'}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                      <th className="p-3">SKU / Division</th>
+                      <th className="p-3">Product Name</th>
+                      <th className="p-3">Unit Price (PGK)</th>
+                      <th className="p-3">Stock</th>
+                      <th className="p-3 text-right">Controls</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {catalog.map(c => (
+                      <tr key={c.id}>
+                        <td className="p-3">
+                          <div className="font-mono text-xs font-bold">{c.id}</div>
+                          <span className="text-[11px] font-bold text-[#9A7B3E]">{c.division}</span>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-bold">{c.name}</div>
+                          <div className="text-xs text-slate-500">{c.unit}</div>
+                        </td>
+                        <td className="p-3 font-extrabold">{formatPGK(c.unitPrice)}</td>
+                        <td className="p-3 text-xs font-bold">{c.stock} ({c.status})</td>
+                        <td className="p-3 text-right space-x-2">
+                          <button onClick={() => setCatModal({ open: true, data: c })} className="p-1.5 rounded bg-blue-50 text-blue-700"><Edit2 className="w-4 h-4" /></button>
+                          <button onClick={() => setDeleteConfirm({ col: 'catalog', id: c.id, name: c.name })} className="p-1.5 rounded bg-red-50 text-red-700"><Trash2 className="w-4 h-4" /></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="font-bold text-sm text-[#162238]">{doc.clientName}</div>
-              {doc.contactPerson && <div className="text-slate-700 mt-0.5">{doc.contactPerson}</div>}
-              {doc.clientPhone && <div className="text-slate-600 mt-0.5">Tel: {doc.clientPhone}</div>}
-              {doc.clientEmail && <div className="text-slate-600">{doc.clientEmail}</div>}
-            </div>
-
-            <div className="p-3.5 rounded-lg bg-[#F7F6F2] border border-slate-200">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#9A7B3E] mb-1">
-                Vehicle & Hire Parameters:
-              </div>
-              <div>
-                <span className="text-slate-500">Assigned Vehicle:</span>{' '}
-                <strong>{veh ? `${veh.makeModel} (${veh.plate})` : doc.vehicleId}</strong>
-              </div>
-              <div>
-                <span className="text-slate-500">Rental Period:</span>{' '}
-                <strong>
-                  {doc.startDate} to {doc.endDate} ({doc.days} Days)
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-500">Hire Mode:</span> <strong>{doc.hireType}</strong> • Fuel: Full-to-Full
-              </div>
-              <div>
-                <span className="text-slate-500">Status:</span> <strong>{doc.status}</strong>
-              </div>
-            </div>
-          </div>
-
-          {/* Amount in Words Banner for Receipts */}
-          {doc.docType === 'Receipt' && (
-            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
-              <span className="text-[10px] font-bold uppercase text-emerald-800 block">
-                Amount Received (In Words):
-              </span>
-              <span className="font-bold text-sm text-[#162238]">{numberToWordsPGK(totals.gross)}</span>
             </div>
           )}
 
-          {/* Line Items Table */}
-          <table className="w-full border-collapse border border-slate-300">
-            <thead>
-              <tr className="bg-[#162238] text-white text-[11px]">
-                <th className="p-2.5 text-left border border-slate-600 w-10">#</th>
-                <th className="p-2.5 text-left border border-slate-600">Vehicle & Hire Service Description</th>
-                <th className="p-2.5 text-center border border-slate-600 w-16">Days</th>
-                <th className="p-2.5 text-right border border-slate-600 w-28">Daily Rate</th>
-                <th className="p-2.5 text-right border border-slate-600 w-28">Total (PGK)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="p-2.5 border border-slate-300">1</td>
-                <td className="p-2.5 border border-slate-300">
-                  <div className="font-bold text-[#162238]">
-                    Vehicle Hire — {veh ? veh.makeModel : doc.vehicleId} {veh ? `[Plate: ${veh.plate}]` : ''}
-                  </div>
-                  <div className="text-slate-600">
-                    Rental Period: {doc.startDate} to {doc.endDate} | {doc.hireType} (Inclusive of 10% GST)
-                  </div>
-                </td>
-                <td className="p-2.5 text-center border border-slate-300 font-semibold">{doc.days}</td>
-                <td className="p-2.5 text-right border border-slate-300">{formatPGK(doc.dailyRate)}</td>
-                <td className="p-2.5 text-right border border-slate-300 font-bold">{formatPGK(totals.base)}</td>
-              </tr>
+          {adminTab === 'billing' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-900">Group Quotations, Proforma Invoices & Official Receipts</h3>
+                  <p className="text-xs text-slate-500">Issued under Tunz Accessories (IPA 6-136546287 • TIN 501982530)</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => exportCSV('Tunz_Accessories_Billing.csv', documents)} className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-bold flex items-center gap-1">
+                    <Download className="w-3.5 h-3.5" /> Export CSV
+                  </button>
+                  <button onClick={() => setDocModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#9E2A2B] text-white text-xs font-bold flex items-center gap-1.5">
+                    <Plus className="w-4 h-4" /> New Quote / Invoice
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                    <tr>
+                      <th className="p-3">Doc # / Division</th>
+                      <th className="p-3">Client</th>
+                      <th className="p-3">Description</th>
+                      <th className="p-3">Total (PGK)</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3 text-right">A4 Print / Edit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {documents.map(d => (
+                      <tr key={d.id}>
+                        <td className="p-3">
+                          <div className="font-mono text-xs font-bold">{d.id}</div>
+                          <span className="text-[11px] font-bold text-[#9A7B3E]">{d.division} • {d.type}</span>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-bold">{d.clientName}</div>
+                          <div className="text-xs text-slate-500">{d.clientContact}</div>
+                        </td>
+                        <td className="p-3 text-xs">
+                          <div className="font-semibold">{d.itemSummary}</div>
+                          <div className="text-slate-500">{d.qty} {d.unitLabel} @ {formatPGK(d.unitRate)}</div>
+                        </td>
+                        <td className="p-3 font-extrabold">{formatPGK(d.totalAmount)}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                            d.status === 'Paid in Full' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}>{d.status}</span>
+                        </td>
+                        <td className="p-3 text-right space-x-2">
+                          <button onClick={() => setPreviewDoc(d)} className="px-2.5 py-1.5 rounded bg-[#162238] text-white text-xs font-bold inline-flex items-center gap-1">
+                            <Printer className="w-3.5 h-3.5" /> A4 View
+                          </button>
+                          <button onClick={() => setDocModal({ open: true, data: d })} className="p-1.5 rounded bg-slate-100 text-slate-700">
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-              {Number(doc.extraFees) > 0 && (
-                <tr>
-                  <td className="p-2.5 border border-slate-300">2</td>
-                  <td className="p-2.5 border border-slate-300">
-                    <div className="font-bold text-[#162238]">Additional Hire Services / Transfers</div>
-                    <div className="text-slate-600">{doc.extraDesc || 'Airport Transfer / Driver / Fuel Surcharge'}</div>
-                  </td>
-                  <td className="p-2.5 text-center border border-slate-300">1</td>
-                  <td className="p-2.5 text-right border border-slate-300">{formatPGK(doc.extraFees)}</td>
-                  <td className="p-2.5 text-right border border-slate-300 font-bold">{formatPGK(doc.extraFees)}</td>
-                </tr>
+          {adminTab === 'payments' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-900">Group Payments & BSP Transfer Ledger</h3>
+                  <p className="text-xs text-slate-500">BSP Account: Barrie Tunz Jr Abel • 1001252316</p>
+                </div>
+                <button onClick={() => setPayModal(true)} className="px-4 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5">
+                  <Plus className="w-4 h-4" /> Record Manual Payment
+                </button>
+              </div>
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                  <tr>
+                    <th className="p-3">Receipt Ref</th>
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Linked Doc</th>
+                    <th className="p-3">Method & Reference</th>
+                    <th className="p-3">Amount (PGK)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {payments.length === 0 ? (
+                    <tr><td colSpan="5" className="p-6 text-center text-slate-500 text-xs">No payments recorded yet.</td></tr>
+                  ) : payments.map(p => (
+                    <tr key={p.id}>
+                      <td className="p-3 font-mono text-xs font-bold">{p.id}</td>
+                      <td className="p-3 text-xs">{p.date}</td>
+                      <td className="p-3 text-xs font-semibold">{p.docId || 'Direct Deposit'}</td>
+                      <td className="p-3 text-xs">{p.method} ({p.reference})</td>
+                      <td className="p-3 font-bold text-emerald-700">{formatPGK(p.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {adminTab === 'expenses' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-900">Group Operating Expenses (Fleet, Organics & Procurement)</h3>
+                  <p className="text-xs text-slate-500">Log fuel, servicing, coconut oil supplies, and freight costs.</p>
+                </div>
+                <button onClick={() => setExpModal(true)} className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
+                  <Plus className="w-4 h-4" /> Log Expense
+                </button>
+              </div>
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                  <tr>
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Division</th>
+                    <th className="p-3">Category</th>
+                    <th className="p-3">Notes</th>
+                    <th className="p-3">Amount (PGK)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {expenses.length === 0 ? (
+                    <tr><td colSpan="5" className="p-6 text-center text-slate-500 text-xs">No expenses recorded yet.</td></tr>
+                  ) : expenses.map(ex => (
+                    <tr key={ex.id}>
+                      <td className="p-3 text-xs">{ex.date}</td>
+                      <td className="p-3 text-xs font-bold text-[#9A7B3E]">{ex.division}</td>
+                      <td className="p-3 text-xs font-semibold">{ex.category}</td>
+                      <td className="p-3 text-xs">{ex.notes}</td>
+                      <td className="p-3 font-bold text-[#9E2A2B]">{formatPGK(ex.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </main>
+      )}
+
+      {proofViewer && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-900">Uploaded Receipt Slip ({proofViewer.id})</h3>
+                <p className="text-xs text-slate-500">Ref: {proofViewer.bankReference} • {formatPGK(proofViewer.amountPaid)}</p>
+              </div>
+              <button onClick={() => setProofViewer(null)} className="p-1.5 rounded-lg bg-slate-100"><X className="w-4 h-4" /></button>
+            </div>
+            <img src={proofViewer.receiptImage} alt="Uploaded receipt" className="w-full max-h-[60vh] object-contain rounded-lg border bg-slate-50" />
+            <div className="flex justify-end gap-2">
+              {proofViewer.status === 'Pending Verification' && (
+                <button
+                  onClick={() => {
+                    verifyPaymentSubmission(proofViewer);
+                    setProofViewer(null);
+                  }}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                >
+                  Verify & Issue Receipt
+                </button>
               )}
-            </tbody>
-          </table>
-
-          {/* Bank Payment Details & GST Totals */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-            <div className="p-3.5 rounded-lg bg-[#F7F6F2] border border-slate-200 space-y-1">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#9A7B3E]">
-                BSP Bank Deposit & Tax Details
-              </div>
-              <div>
-                <span className="text-slate-500">Account Name:</span> <strong>{COMPANY_INFO.accountName}</strong>
-              </div>
-              <div>
-                <span className="text-slate-500">Account Number:</span>{' '}
-                <strong>
-                  {COMPANY_INFO.bspAccount} ({COMPANY_INFO.bspBranch})
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-500">Parent Entity:</span> Tunz Accessories (IPA #{COMPANY_INFO.ipaReg})
-              </div>
-              <div>
-                <span className="text-slate-500">IRC TIN:</span> <strong>{COMPANY_INFO.ircTin}</strong>
-              </div>
-            </div>
-
-            <div className="border border-slate-300 rounded-lg overflow-hidden">
-              <div className="flex justify-between px-3.5 py-2 border-b border-slate-200">
-                <span className="text-slate-600">Subtotal (Excl. GST):</span>
-                <span className="font-semibold">{formatPGK(totals.subtotalExcl)}</span>
-              </div>
-              <div className="flex justify-between px-3.5 py-2 border-b border-slate-200">
-                <span className="text-slate-600">GST (10% Included):</span>
-                <span className="font-semibold">{formatPGK(totals.gst)}</span>
-              </div>
-              <div className="flex justify-between px-3.5 py-2.5 bg-[#162238] text-white font-extrabold text-sm">
-                <span>{doc.docType === 'Receipt' ? 'TOTAL AMOUNT PAID:' : 'TOTAL PAYABLE (PGK):'}</span>
-                <span className="text-[#D4AF37]">{formatPGK(totals.gross)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Signature Footer */}
-          <div className="grid grid-cols-2 gap-6 pt-6 mt-4 border-t border-slate-200">
-            <div>
-              <div className="border-b border-slate-400 h-8" />
-              <div className="font-bold text-[#162238] mt-1">
-                Authorized Signatory — {COMPANY_INFO.name}
-              </div>
-              <div className="text-slate-500">{COMPANY_INFO.principal} | Official Stamp & Date</div>
-            </div>
-            <div>
-              <div className="border-b border-slate-400 h-8" />
-              <div className="font-bold text-[#162238] mt-1">Client / Hirer Acceptance</div>
-              <div className="text-slate-500">Authorized Officer Signature & Date</div>
+              <button onClick={() => setProofViewer(null)} className="px-4 py-2 rounded-lg bg-slate-100 text-xs font-bold">Close</button>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
+      )}
 
-// ============================================================================
-// SUB-COMPONENT: VEHICLE FORM MODAL
-// ============================================================================
-function VehicleFormModal({ initialVehicle, onClose, onSave }) {
-  const [form, setForm] = useState(
-    initialVehicle || {
-      id: '',
-      makeModel: '',
-      plate: '',
-      color: '',
-      category: '5-Seater AWD SUV',
-      dailyRate: 250,
-      odometer: 100000,
-      nextServiceOdo: 105000,
-      regoExpiry: '2027-06-30',
-      insuranceExpiry: '2027-06-30',
-      status: 'Available',
-      fuelType: 'Petrol',
-      notes: ''
-    }
-  );
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!form.makeModel.trim()) return;
-    onSave(form);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6">
-        <div className="bg-[#162238] text-white px-6 py-4 flex items-center justify-between border-b-2 border-[#9A7B3E]">
-          <h3 className="text-base font-bold">
-            {initialVehicle ? `Edit Vehicle — ${initialVehicle.id}` : 'Add Vehicle to Tunz Cars Fleet'}
-          </h3>
-          <button onClick={onClose} className="text-slate-300 hover:text-white cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
+      {showPinModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <form onSubmit={handlePinUnlock} className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-bold text-[#162238] mb-1">Tunz Accessories Owner Login</h3>
+            <p className="text-xs text-slate-500 mb-4">Enter Owner PIN (2026) to manage all divisions.</p>
+            <input
+              type="password"
+              autoFocus
+              placeholder="PIN (2026)"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-center text-lg font-bold tracking-widest mb-2"
+            />
+            {pinError && <p className="text-xs text-red-600 mb-2">{pinError}</p>}
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={() => setShowPinModal(false)} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+              <button type="submit" className="flex-1 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold">Unlock Suite</button>
+            </div>
+          </form>
         </div>
+      )}
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Make & Model *</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g., 2016 Toyota Hilux 4WD"
-                value={form.makeModel}
-                onChange={(e) => setForm({ ...form, makeModel: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Registration Plate # *</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g., KVG-901"
-                value={form.plate}
-                onChange={(e) => setForm({ ...form, plate: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
+      {vehModal.open && (
+        <VehicleModal initial={vehModal.data} onClose={() => setVehModal({ open: false, data: null })} onSave={saveVehicle} />
+      )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Colour</label>
-              <input
-                type="text"
-                placeholder="White / Black"
-                value={form.color}
-                onChange={(e) => setForm({ ...form, color: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Daily Rate (PGK)</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={form.dailyRate}
-                onChange={(e) => setForm({ ...form, dailyRate: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-bold"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Status</label>
-              <select
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white font-semibold"
+      {catModal.open && (
+        <CatalogModal initial={catModal.data} onClose={() => setCatModal({ open: false, data: null })} onSave={saveCatalogItem} />
+      )}
+
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-bold text-red-700 mb-2">Confirm Deletion</h3>
+            <p className="text-sm text-slate-600 mb-4">Remove <strong>{deleteConfirm.name}</strong> permanently?</p>
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+              <button
+                onClick={async () => {
+                  if (deleteConfirm.col === 'vehicles') setVehicles(p => p.filter(x => x.id !== deleteConfirm.id));
+                  if (deleteConfirm.col === 'catalog') setCatalog(p => p.filter(x => x.id !== deleteConfirm.id));
+                  await deleteCloud(deleteConfirm.col, deleteConfirm.id);
+                  setDeleteConfirm(null);
+                }}
+                className="flex-1 py-2 rounded-lg bg-red-600 text-white text-xs font-bold"
               >
-                <option value="Available">Available</option>
-                <option value="On Hire">On Hire</option>
-                <option value="Maintenance">Maintenance</option>
-                <option value="Reserved">Reserved</option>
-              </select>
+                Delete
+              </button>
             </div>
           </div>
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Current Odometer (km)</label>
-              <input
-                type="number"
-                required
-                value={form.odometer}
-                onChange={(e) => setForm({ ...form, odometer: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Next Service Due (km)</label>
-              <input
-                type="number"
-                required
-                value={form.nextServiceOdo}
-                onChange={(e) => setForm({ ...form, nextServiceOdo: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Rego / MVIL Expiry</label>
-              <input
-                type="date"
-                value={form.regoExpiry}
-                onChange={(e) => setForm({ ...form, regoExpiry: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
+      {docModal.open && (
+        <DocumentModal initial={docModal.data} vehicles={vehicles} catalog={catalog} onClose={() => setDocModal({ open: false, data: null })} onSave={saveDocument} />
+      )}
 
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-lg bg-[#162238] text-white font-semibold hover:bg-[#2B3A52] cursor-pointer"
-            >
-              Save Vehicle
-            </button>
+      {payModal && (
+        <PaymentModal documents={documents} onClose={() => setPayModal(false)} onSave={logPayment} />
+      )}
+
+      {expModal && (
+        <ExpenseModal onClose={() => setExpModal(false)} onSave={logExpense} />
+      )}
+
+      {previewDoc && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-3xl w-full p-8 shadow-2xl my-8">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-200 print:hidden">
+              <span className="text-xs font-bold uppercase text-slate-500">Corporate A4 Document Preview</span>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()} className="px-4 py-1.5 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
+                  <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+                </button>
+                <button onClick={() => setPreviewDoc(null)} className="p-1.5 rounded-lg bg-slate-100"><X className="w-4 h-4" /></button>
+              </div>
+            </div>
+
+            <div className="space-y-6 text-slate-900">
+              <div className="flex justify-between items-start border-b-2 border-[#9E2A2B] pb-4">
+                <div>
+                  <h2 className="text-2xl font-extrabold text-[#162238]">TUNZ ACCESSORIES</h2>
+                  <p className="text-xs font-bold text-[#9A7B3E]">Operating Division: {previewDoc.division}</p>
+                  <p className="text-xs text-slate-600 mt-1">Phone: +675 7962 5068 • Email: tuneabel@gmail.com</p>
+                  <p className="text-xs text-slate-600">IPA Reg #: 6-136546287 • IRC TIN: 501982530</p>
+                </div>
+                <div className="text-right">
+                  <h3 className="text-xl font-extrabold uppercase text-[#162238]">{previewDoc.type}</h3>
+                  <p className="font-mono text-xs font-bold text-[#9E2A2B]">{previewDoc.id}</p>
+                  <p className="text-xs text-slate-600 mt-1">Date: {previewDoc.date}</p>
+                  <p className="text-xs font-bold text-slate-700">Status: {previewDoc.status}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-xs space-y-1">
+                <p className="font-bold uppercase text-[#9A7B3E]">Client / Organization:</p>
+                <p className="text-sm font-bold">{previewDoc.clientName}</p>
+                <p className="text-slate-600">Contact: {previewDoc.clientContact}</p>
+              </div>
+
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-[#162238] text-white">
+                    <th className="p-2.5">Description</th>
+                    <th className="p-2.5 text-center">Qty ({previewDoc.unitLabel})</th>
+                    <th className="p-2.5 text-right">Unit Rate (PGK)</th>
+                    <th className="p-2.5 text-right">Total (PGK)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-slate-200">
+                    <td className="p-3">
+                      <div className="font-bold">{previewDoc.itemSummary}</div>
+                      {previewDoc.division === 'Tunz Cars' && (
+                        <div className="text-slate-500">Hire Period: {previewDoc.startDate} to {previewDoc.endDate}</div>
+                      )}
+                      <div className="text-slate-500">{previewDoc.notes}</div>
+                    </td>
+                    <td className="p-3 text-center font-bold">{previewDoc.qty}</td>
+                    <td className="p-3 text-right">{formatPGK(previewDoc.unitRate)}</td>
+                    <td className="p-3 text-right font-bold">{formatPGK(previewDoc.totalAmount)}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="flex justify-between items-start gap-6">
+                <div className="bg-slate-50 p-3.5 rounded-lg border-l-4 border-[#9E2A2B] text-xs space-y-1 flex-1">
+                  <p className="font-bold text-[#9E2A2B]">OFFICIAL BANKING DETAILS</p>
+                  <p><strong>Account Name:</strong> Barrie Tunz Jr Abel</p>
+                  <p><strong>Bank & Acc #:</strong> BSP Kavieng — 1001252316</p>
+                  {previewDoc.type === 'Official Receipt' && (
+                    <p className="pt-1 font-semibold text-slate-800">Amount in Words: {numberToWordsPGK(previewDoc.totalAmount)}</p>
+                  )}
+                </div>
+                <div className="w-60 text-xs space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Subtotal (Excl. GST):</span>
+                    <span>{formatPGK(previewDoc.totalAmount / 1.1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">PNG GST (10%):</span>
+                    <span>{formatPGK(previewDoc.totalAmount - previewDoc.totalAmount / 1.1)}</span>
+                  </div>
+                  <div className="flex justify-between font-extrabold text-sm bg-[#162238] text-white p-2 rounded">
+                    <span>TOTAL (PGK):</span>
+                    <span>{formatPGK(previewDoc.totalAmount)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ============================================================================
-// SUB-COMPONENT: PAYMENT FORM MODAL
-// ============================================================================
-function PaymentFormModal({ billingDocs, vehicles, prefillDoc, onClose, onSave }) {
-  const unpaidDocs = billingDocs.filter((d) => d.status !== 'Paid');
-  const initialDoc = prefillDoc || unpaidDocs[0] || null;
-  const initialGross = initialDoc ? calcDocTotals(initialDoc).gross : 250;
-
-  const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
-    docRef: initialDoc ? initialDoc.id : '',
-    clientName: initialDoc ? initialDoc.clientName : '',
-    vehicleId: initialDoc ? initialDoc.vehicleId : vehicles[0]?.id || 'TC-VEH-01',
-    amountPaid: initialGross,
-    bondCollected: 0,
-    method: 'BSP Transfer',
-    referenceNo: '',
-    status: 'Paid'
-  });
-
-  const handleSelectDoc = (docId) => {
-    const found = billingDocs.find((d) => d.id === docId);
-    if (found) {
-      setForm({
-        ...form,
-        docRef: found.id,
-        clientName: found.clientName,
-        vehicleId: found.vehicleId,
-        amountPaid: calcDocTotals(found).gross
-      });
-    } else {
-      setForm({ ...form, docRef: '' });
-    }
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!form.clientName.trim() || Number(form.amountPaid) <= 0) return;
-    onSave(form);
-  };
-
+function VehicleModal({ initial, onClose, onSave }) {
+  const [form, setForm] = useState(
+    initial || { name: '', plate: '', category: 'SUV / AWD', seats: '5 Seats • Auto', dailyRate: 250, status: 'Available', odometer: 0, nextServiceKm: 5000, highlights: '' }
+  );
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
-        <div className="bg-[#162238] text-white px-6 py-4 flex items-center justify-between border-b-2 border-[#9A7B3E]">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl">
+        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Fleet Vehicle' : 'Add Fleet Vehicle'}</h3>
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <h3 className="text-base font-bold">Record Incoming Rental Payment</h3>
-            <p className="text-xs text-slate-300">Depositing to BSP Kavieng Acc # {COMPANY_INFO.bspAccount}</p>
+            <label className="block text-xs font-semibold mb-1">Vehicle Name *</label>
+            <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="2016 Toyota Hilux" className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
-          <button onClick={onClose} className="text-slate-300 hover:text-white cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
           <div>
-            <label className="block font-bold text-[#162238] mb-1">Link to Quote / Proforma Invoice (Optional)</label>
-            <select
-              value={form.docRef}
-              onChange={(e) => handleSelectDoc(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white font-semibold"
-            >
-              <option value="">-- Standalone / Direct Rental Deposit --</option>
-              {billingDocs.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.id} — {d.clientName} ({formatPGK(calcDocTotals(d).gross)})
-                </option>
-              ))}
+            <label className="block text-xs font-semibold mb-1">Plate # *</label>
+            <input required value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} placeholder="KVG-999" className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Daily Rate (PGK)</label>
+            <input type="number" required value={form.dailyRate} onChange={e => setForm({ ...form, dailyRate: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Odometer (km)</label>
+            <input type="number" value={form.odometer} onChange={e => setForm({ ...form, odometer: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Status</label>
+            <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm">
+              <option>Available</option>
+              <option>On Hire</option>
+              <option>Maintenance</option>
+              <option>Inactive</option>
             </select>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Payer / Client Name *</label>
-              <input
-                type="text"
-                required
-                value={form.clientName}
-                onChange={(e) => setForm({ ...form, clientName: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Payment Date *</label>
-              <input
-                type="date"
-                required
-                value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Rental Amount Paid (PGK) *</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={form.amountPaid}
-                onChange={(e) => setForm({ ...form, amountPaid: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-extrabold text-emerald-700"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Security Bond Collected (PGK)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={form.bondCollected}
-                onChange={(e) => setForm({ ...form, bondCollected: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Payment Method</label>
-              <select
-                value={form.method}
-                onChange={(e) => setForm({ ...form, method: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
-              >
-                <option value="BSP Transfer">BSP Transfer</option>
-                <option value="Cash">Cash</option>
-                <option value="EFTPOS">EFTPOS</option>
-                <option value="Cheque">Government / Institutional Cheque</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">BSP Deposit Slip / Txn Ref #</label>
-              <input
-                type="text"
-                placeholder="e.g., BSP-TXN-99210"
-                value={form.referenceNo}
-                onChange={(e) => setForm({ ...form, referenceNo: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-lg bg-emerald-700 text-white font-semibold hover:bg-emerald-800 cursor-pointer"
-            >
-              Confirm Payment & Issue Receipt
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// SUB-COMPONENT: FUEL & MAINTENANCE EXPENSE MODAL
-// ============================================================================
-function ExpenseFormModal({ vehicles, onClose, onSave }) {
-  const defaultVeh = vehicles[0] || { id: 'TC-VEH-01', odometer: 149250 };
-  const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
-    vehicleId: defaultVeh.id,
-    category: 'Fuel',
-    vendor: 'Puma Energy Kavieng Service Station',
-    description: '',
-    litres: 40,
-    odometer: defaultVeh.odometer,
-    prevOdometer: defaultVeh.odometer - 420,
-    amount: 176,
-    receiptNo: ''
-  });
-
-  const handleVehChange = (vehId) => {
-    const found = vehicles.find((v) => v.id === vehId);
-    setForm({
-      ...form,
-      vehicleId: vehId,
-      odometer: found ? found.odometer : form.odometer,
-      prevOdometer: found ? found.odometer : form.prevOdometer
-    });
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!form.vendor.trim() || Number(form.amount) <= 0) return;
-    onSave(form);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
-        <div className="bg-[#162238] text-white px-6 py-4 flex items-center justify-between border-b-2 border-[#9A7B3E]">
-          <h3 className="text-base font-bold">Log Fuel Fill or Fleet Maintenance</h3>
-          <button onClick={onClose} className="text-slate-300 hover:text-white cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Date</label>
-              <input
-                type="date"
-                required
-                value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Vehicle</label>
-              <select
-                value={form.vehicleId}
-                onChange={(e) => handleVehChange(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white font-semibold"
-              >
-                {vehicles.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.id} — {v.makeModel}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Category</label>
-              <select
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white font-semibold"
-              >
-                <option value="Fuel">Fuel</option>
-                <option value="Routine Service">Routine Service</option>
-                <option value="Repairs & Parts">Repairs & Parts</option>
-                <option value="Tyres & Alignment">Tyres & Alignment</option>
-                <option value="Rego & MVIL">Rego & MVIL</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Service Station / Workshop *</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g., Puma Energy Kavieng / Ela Motors"
-                value={form.vendor}
-                onChange={(e) => setForm({ ...form, vendor: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-[#162238] mb-1">Amount Paid (PGK) *</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-extrabold text-[#9E2A2B]"
-              />
-            </div>
-          </div>
-
-          {form.category === 'Fuel' && (
-            <div className="grid grid-cols-3 gap-3 bg-[#F7F6F2] p-3 rounded-lg border border-slate-200">
-              <div>
-                <label className="block font-bold text-[#162238] mb-1">Litres Filled (L)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={form.litres}
-                  onChange={(e) => setForm({ ...form, litres: Number(e.target.value) })}
-                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-[#162238] mb-1">Prev. Odometer</label>
-                <input
-                  type="number"
-                  value={form.prevOdometer}
-                  onChange={(e) => setForm({ ...form, prevOdometer: Number(e.target.value) })}
-                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-[#162238] mb-1">Current Odometer</label>
-                <input
-                  type="number"
-                  value={form.odometer}
-                  onChange={(e) => setForm({ ...form, odometer: Number(e.target.value) })}
-                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
-                />
-              </div>
-            </div>
-          )}
-
-          {form.category !== 'Fuel' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-bold text-[#162238] mb-1">Current Odometer (km)</label>
-                <input
-                  type="number"
-                  value={form.odometer}
-                  onChange={(e) => setForm({ ...form, odometer: Number(e.target.value) })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-[#162238] mb-1">Supplier Receipt / Invoice #</label>
-                <input
-                  type="text"
-                  value={form.receiptNo}
-                  onChange={(e) => setForm({ ...form, receiptNo: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                />
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block font-bold text-[#162238] mb-1">Work / Fuel Description *</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g., Full tank petrol refill / Oil & filter service"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-lg bg-[#9E2A2B] text-white font-semibold hover:bg-red-800 cursor-pointer"
-            >
-              Save Expense
-            </button>
-          </div>
-        </form>
-      </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Highlights / Specs</label>
+          <input value={form.highlights} onChange={e => setForm({ ...form, highlights: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold">Save Vehicle</button>
+        </div>
+      </form>
     </div>
   );
 }
+
+function CatalogModal({ initial, onClose, onSave }) {
+  const [form, setForm] = useState(
+    initial || { division: 'Tunz Organics', name: '', unit: 'Per Unit', unitPrice: 15, stock: 50, status: 'In Stock', description: '' }
+  );
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl">
+        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Catalog SKU' : 'Add Product / Service SKU'}</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Division</label>
+            <select value={form.division} onChange={e => setForm({ ...form, division: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm">
+              <option>Tunz Organics</option>
+              <option>Tech & Merch</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Unit Price (PGK)</label>
+            <input type="number" required value={form.unitPrice} onChange={e => setForm({ ...form, unitPrice: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Product / Package Name *</label>
+          <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Unit Label</label>
+            <input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Stock Qty</label>
+            <input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Description</label>
+          <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold">Save SKU</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function DocumentModal({ initial, vehicles, catalog, onClose, onSave }) {
+  const [form, setForm] = useState(
+    initial || {
+      division: 'Tunz Cars',
+      type: 'Quotation',
+      status: 'Sent',
+      date: new Date().toISOString().slice(0, 10),
+      clientName: '',
+      clientContact: '',
+      itemSummary: vehicles[0]?.name || '',
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: new Date().toISOString().slice(0, 10),
+      qty: 1,
+      unitLabel: 'Days',
+      unitRate: vehicles[0]?.dailyRate || 250,
+      notes: '10% PNG GST Inclusive'
+    }
+  );
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl">
+        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Document' : 'Create Group Quote / Invoice / Receipt'}</h3>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Division</label>
+            <select value={form.division} onChange={e => setForm({ ...form, division: e.target.value, unitLabel: e.target.value === 'Tunz Cars' ? 'Days' : 'Units' })} className="w-full border rounded-lg px-2 py-2 text-xs">
+              <option>Tunz Cars</option>
+              <option>Tunz Organics</option>
+              <option>Tech & Merch</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Doc Type</label>
+            <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-full border rounded-lg px-2 py-2 text-xs">
+              <option>Quotation</option>
+              <option>Proforma Invoice</option>
+              <option>Official Receipt</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Date</label>
+            <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="w-full border rounded-lg px-2 py-2 text-xs" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Client / Organization *</label>
+            <input required value={form.clientName} onChange={e => setForm({ ...form, clientName: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Contact</label>
+            <input value={form.clientContact} onChange={e => setForm({ ...form, clientContact: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Vehicle / Product Description *</label>
+          <input required value={form.itemSummary} onChange={e => setForm({ ...form, itemSummary: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+        {form.division === 'Tunz Cars' ? (
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold mb-1">Start Date</label>
+              <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className="w-full border rounded-lg px-2 py-2 text-xs" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">End Date</label>
+              <input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className="w-full border rounded-lg px-2 py-2 text-xs" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">Daily Rate (PGK)</label>
+              <input type="number" value={form.unitRate} onChange={e => setForm({ ...form, unitRate: e.target.value })} className="w-full border rounded-lg px-2 py-2 text-sm font-bold" />
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold mb-1">Quantity</label>
+              <input type="number" value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">Unit Price (PGK)</label>
+              <input type="number" value={form.unitRate} onChange={e => setForm({ ...form, unitRate: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+            </div>
+          </div>
+        )}
+        <div>
+          <label className="block text-xs font-semibold mb-1">Notes</label>
+          <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9E2A2B] text-white text-xs font-bold">Save Document</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PaymentModal({ documents, onClose, onSave }) {
+  const [form, setForm] = useState({
+    docId: documents[0]?.id || '',
+    date: new Date().toISOString().slice(0, 10),
+    amount: documents[0]?.totalAmount || 250,
+    method: 'BSP Bank Transfer',
+    reference: ''
+  });
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-md w-full space-y-3 shadow-xl">
+        <h3 className="text-lg font-bold text-[#162238]">Record Group Payment</h3>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Linked Invoice / Quote</label>
+          <select value={form.docId} onChange={e => setForm({ ...form, docId: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="">-- Direct Deposit --</option>
+            {documents.map(d => <option key={d.id} value={d.id}>{d.id} ({d.division}) — {d.clientName}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Amount (PGK) *</label>
+            <input type="number" required value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Date</label>
+            <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Method</label>
+            <select value={form.method} onChange={e => setForm({ ...form, method: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm">
+              <option>BSP Bank Transfer</option>
+              <option>Cash</option>
+              <option>EFTPOS</option>
+              <option>Government LPO</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">BSP Reference #</label>
+            <input value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold">Confirm Payment</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ExpenseModal({ onClose, onSave }) {
+  const [form, setForm] = useState({
+    division: 'Tunz Cars',
+    date: new Date().toISOString().slice(0, 10),
+    category: 'Fuel & Servicing',
+    amount: 0,
+    notes: ''
+  });
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-md w-full space-y-3 shadow-xl">
+        <h3 className="text-lg font-bold text-[#162238]">Log Group Expense</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Division</label>
+            <select value={form.division} onChange={e => setForm({ ...form, division: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm">
+              <option>Tunz Cars</option>
+              <option>Tunz Organics</option>
+              <option>Tech & Merch</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Amount (PGK) *</label>
+            <input type="number" required value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Category</label>
+            <input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Date</label>
+            <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Notes / Supplier</label>
+          <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="e.g., Puma Energy Kavieng / Virgin Coconut Oil" className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold">Save Expense</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export default TunzAccessoriesSuite;
