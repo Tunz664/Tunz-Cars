@@ -1,9 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
+import * as AppModule from './App.jsx'
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+const App = AppModule.default || AppModule.TunzCarsApp || Object.values(AppModule)[0]
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />)
