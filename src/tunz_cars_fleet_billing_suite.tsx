@@ -4,7 +4,7 @@ import {
   Plus, Edit2, Trash2, CheckCircle, Clock, AlertTriangle, Printer,
   Download, Search, Lock, Unlock, Phone, Mail, MapPin, DollarSign,
   TrendingUp, Users, ArrowRight, X, Check, Building2, Eye, Send,
-  Sparkles, Package, Laptop, ShoppingBag, Layers, Briefcase, Upload, Image as ImageIcon, Copy
+  Sparkles, Package, Laptop, ShoppingBag, Layers, Briefcase, Upload, Image as ImageIcon, Copy, Navigation, ExternalLink
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -23,6 +23,53 @@ const YOUR_FIREBASE_CONFIG_HERE = {
   appId: "1:733661606615:web:6d8fc8d47d477f565557692"
 };
 
+// Official Logo Paths (stored in GitHub public/ folder)
+const TA_LOGO_URL = '/ta-logo.png';
+const TC_LOGO_URL = '/tc-logo.jpg';
+
+// Papua New Guinea 4 Regions & Current Towns
+const PNG_REGIONS_AND_TOWNS = {
+  'New Guinea Islands (NGI)': [
+    'Kavieng',
+    'Kokopo',
+    'Rabaul',
+    'Kimbe',
+    'Lorengau',
+    'Buka',
+    'Arawa',
+    'Namatanai'
+  ],
+  'Southern': [
+    'Port Moresby',
+    'Alotau',
+    'Popondetta',
+    'Kerema',
+    'Daru',
+    'Kiunga'
+  ],
+  'Momase': [
+    'Lae',
+    'Madang',
+    'Wewak',
+    'Vanimo',
+    'Aitape',
+    'Bulolo',
+    'Wau',
+    'Finschhafen'
+  ],
+  'Highlands': [
+    'Mount Hagen',
+    'Goroka',
+    'Mendi',
+    'Wabag',
+    'Kundiawa',
+    'Tari',
+    'Minj',
+    'Banz',
+    'Kainantu'
+  ]
+};
+
 const app = initializeApp(YOUR_FIREBASE_CONFIG_HERE);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -35,6 +82,8 @@ const INITIAL_FLEET = [
     plate: 'KVG-412',
     category: 'SUV / AWD',
     seats: '5 Seats • Auto • AWD',
+    region: 'New Guinea Islands (NGI)',
+    town: 'Kavieng',
     dailyRate: 250,
     status: 'Available',
     odometer: 149250,
@@ -49,6 +98,8 @@ const INITIAL_FLEET = [
     plate: 'KVG-789',
     category: 'Executive Sedan',
     seats: '5 Seats • Auto • 2WD',
+    region: 'New Guinea Islands (NGI)',
+    town: 'Kavieng',
     dailyRate: 220,
     status: 'Available',
     odometer: 118500,
@@ -63,6 +114,8 @@ const INITIAL_FLEET = [
     plate: 'KVG-195',
     category: '4WD Station Wagon',
     seats: '7 Seats • Auto • 4WD',
+    region: 'New Guinea Islands (NGI)',
+    town: 'Kavieng',
     dailyRate: 250,
     status: 'Available',
     odometer: 214000,
@@ -206,16 +259,24 @@ function TunzAccessoriesSuite() {
   const [expModal, setExpModal] = useState(false);
   const [proofViewer, setProofViewer] = useState(null);
 
+  // Public Car Booking Filters & Form
+  const [filterRegion, setFilterRegion] = useState('All');
+  const [filterTown, setFilterTown] = useState('All');
+  const [gpsStatus, setGpsStatus] = useState('');
+
   const [carForm, setCarForm] = useState({
     vehicleId: 'TC-VEH-01',
+    serviceType: 'Vehicle Hire (Self-Drive)', // 'Vehicle Hire (Self-Drive)' | 'Chauffeur Service' | 'Parcel Pick up & Delivery'
     clientName: '',
     organization: '',
     phone: '',
     licenseNo: '',
     startDate: '2026-11-21',
     endDate: '2026-11-23',
-    pickupLocation: 'Kavieng Airport (KVG)',
-    hireType: 'Self-Drive'
+    pickupAddress: 'Kavieng Airport (KVG), New Ireland Province',
+    dropoffAddress: 'Kavieng Town Center',
+    googleMapsLink: '',
+    parcelDetails: ''
   });
 
   const [orderForm, setOrderForm] = useState({
@@ -298,13 +359,74 @@ function TunzAccessoriesSuite() {
     return diff > 0 ? diff : 1;
   };
 
-  const publicVehicles = useMemo(() => vehicles.filter(v => v.status !== 'Inactive'), [vehicles]);
+  // Filtered Public Fleet by PNG Region & Town
+  const publicVehicles = useMemo(() => {
+    return vehicles.filter(v => {
+      if (v.status === 'Inactive') return false;
+      const vRegion = v.region || 'New Guinea Islands (NGI)';
+      const vTown = v.town || 'Kavieng';
+      if (filterRegion !== 'All' && vRegion !== filterRegion) return false;
+      if (filterTown !== 'All' && vTown !== filterTown) return false;
+      return true;
+    });
+  }, [vehicles, filterRegion, filterTown]);
+
   const selectedVehicle = useMemo(
     () => publicVehicles.find(v => v.id === carForm.vehicleId) || publicVehicles[0],
     [publicVehicles, carForm.vehicleId]
   );
-  const rentalDays = calcDays(carForm.startDate, carForm.endDate);
-  const rentalTotal = (selectedVehicle?.dailyRate || 250) * rentalDays;
+
+  // Sync default pickup town when selected vehicle changes
+  useEffect(() => {
+    if (selectedVehicle?.town) {
+      setCarForm(prev => ({
+        ...prev,
+        pickupAddress: `${selectedVehicle.town} Airport / Town Center, ${selectedVehicle.region || 'PNG'}`
+      }));
+    }
+  }, [selectedVehicle?.id]);
+
+  const isParcelMode = carForm.serviceType === 'Parcel Pick up & Delivery';
+  const rentalDays = isParcelMode ? 1 : calcDays(carForm.startDate, carForm.endDate);
+  const serviceSurcharge = carForm.serviceType === 'Chauffeur Service' ? 50 * rentalDays : 0;
+  const baseCarCost = isParcelMode ? 65 : (selectedVehicle?.dailyRate || 250) * rentalDays;
+  const rentalTotal = baseCarCost + serviceSurcharge;
+
+  // Google Maps Embed & Direct Pin URL
+  const mapQueryLocation = useMemo(() => {
+    const q = carForm.pickupAddress?.trim() || `${selectedVehicle?.town || 'Kavieng'}, Papua New Guinea`;
+    return encodeURIComponent(q.includes('Papua New Guinea') ? q : `${q}, Papua New Guinea`);
+  }, [carForm.pickupAddress, selectedVehicle]);
+
+  const googleMapsDirectionsUrl = useMemo(() => {
+    const orig = encodeURIComponent(carForm.pickupAddress || `${selectedVehicle?.town || 'Kavieng'}, PNG`);
+    const dest = encodeURIComponent(carForm.dropoffAddress || '');
+    return dest
+      ? `https://www.google.com/maps/dir/?api=1&origin=${orig}&destination=${dest}`
+      : `https://www.google.com/maps/search/?api=1&query=${orig}`;
+  }, [carForm.pickupAddress, carForm.dropoffAddress, selectedVehicle]);
+
+  const handleUseCurrentGPS = () => {
+    if (!navigator.geolocation) {
+      setGpsStatus('GPS not supported on this browser.');
+      return;
+    }
+    setGpsStatus('Locating GPS coordinates...');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        const pinUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        setCarForm(prev => ({
+          ...prev,
+          pickupAddress: `${lat}, ${lng} (${selectedVehicle?.town || 'PNG'})`,
+          googleMapsLink: pinUrl
+        }));
+        setGpsStatus('Live GPS pin captured ✓');
+      },
+      () => setGpsStatus('Location permission denied. Type address or paste Google Maps link.')
+    );
+  };
 
   const filteredCatalog = useMemo(
     () => catalog.filter(c => publicTab === 'organics' ? c.division === 'Tunz Organics' : c.division === 'Tech & Merch'),
@@ -320,19 +442,28 @@ function TunzAccessoriesSuite() {
     e.preventDefault();
     if (!selectedVehicle) return;
     const id = `TC-BK-2026-${String(inquiries.length + 101).padStart(3, '0')}`;
+    const mapNote = carForm.googleMapsLink ? ` • Map Pin: ${carForm.googleMapsLink}` : '';
+    const extraInfo = isParcelMode
+      ? `Parcel: ${carForm.parcelDetails || 'Standard Parcel'} • From: ${carForm.pickupAddress} → To: ${carForm.dropoffAddress}${mapNote}`
+      : `${carForm.serviceType} • Pickup: ${carForm.pickupAddress} → Dropoff: ${carForm.dropoffAddress} • Lic: ${carForm.licenseNo || 'Chauffeur'}${mapNote}`;
+
     const record = {
       id,
       division: 'Tunz Cars',
+      serviceType: carForm.serviceType,
       clientName: carForm.clientName,
       organization: carForm.organization,
       phone: carForm.phone,
-      itemSummary: `${selectedVehicle.name} (${selectedVehicle.plate})`,
+      itemSummary: `${carForm.serviceType}: ${selectedVehicle.name} (${selectedVehicle.plate} • ${selectedVehicle.town || 'Kavieng'})`,
       startDate: carForm.startDate,
-      endDate: carForm.endDate,
+      endDate: isParcelMode ? carForm.startDate : carForm.endDate,
       qty: rentalDays,
-      unitRate: selectedVehicle.dailyRate,
+      unitRate: isParcelMode ? 65 : (selectedVehicle.dailyRate + (carForm.serviceType === 'Chauffeur Service' ? 50 : 0)),
       totalAmount: rentalTotal,
-      details: `${carForm.hireType} • Pickup: ${carForm.pickupLocation} • Lic: ${carForm.licenseNo}`,
+      pickupAddress: carForm.pickupAddress,
+      dropoffAddress: carForm.dropoffAddress,
+      googleMapsLink: carForm.googleMapsLink || googleMapsDirectionsUrl,
+      details: extraInfo,
       status: 'Pending Approval',
       createdAt: new Date().toISOString().slice(0, 10)
     };
@@ -485,7 +616,7 @@ function TunzAccessoriesSuite() {
       startDate: inq.startDate,
       endDate: inq.endDate,
       qty: inq.qty,
-      unitLabel: inq.division === 'Tunz Cars' ? 'Days' : 'Units',
+      unitLabel: inq.serviceType === 'Parcel Pick up & Delivery' ? 'Trips' : (inq.division === 'Tunz Cars' ? 'Days' : 'Units'),
       unitRate: inq.unitRate,
       totalAmount: inq.totalAmount,
       paidAmount: 0,
@@ -499,7 +630,15 @@ function TunzAccessoriesSuite() {
   const saveVehicle = async (v) => {
     const isNew = !v.id;
     const id = v.id || `TC-VEH-${String(vehicles.length + 1).padStart(2, '0')}`;
-    const rec = { ...v, id, dailyRate: Number(v.dailyRate || 250), odometer: Number(v.odometer || 0), nextServiceKm: Number(v.nextServiceKm || 5000) };
+    const rec = {
+      ...v,
+      id,
+      region: v.region || 'New Guinea Islands (NGI)',
+      town: v.town || 'Kavieng',
+      dailyRate: Number(v.dailyRate || 250),
+      odometer: Number(v.odometer || 0),
+      nextServiceKm: Number(v.nextServiceKm || 5000)
+    };
     setVehicles(prev => isNew ? [...prev, rec] : prev.map(x => x.id === id ? rec : x));
     await saveCloud('vehicles', id, rec);
     setVehModal({ open: false, data: null });
@@ -590,11 +729,16 @@ function TunzAccessoriesSuite() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* GROUP HEADER WITH TUNZ ACCESSORIES LOGO */}
       <header className="bg-[#162238] text-white border-b-4 border-[#9A7B3E] sticky top-0 z-30 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#9A7B3E] to-[#9E2A2B] flex items-center justify-center font-extrabold text-white tracking-wider shadow">
-              TA
+        <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3.5">
+            <div className="bg-white rounded-xl p-1.5 shadow-md flex items-center justify-center shrink-0">
+              <img
+                src={TA_LOGO_URL}
+                alt="Tunz Accessories Logo"
+                className="h-11 w-auto object-contain"
+              />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -604,7 +748,7 @@ function TunzAccessoriesSuite() {
                 </span>
               </div>
               <p className="text-xs text-slate-300">
-                Subsidiaries: <strong>Tunz Cars</strong> • <strong>Tunz Organics</strong> • <strong>Tech & Merch</strong> | IPA 6-136546287 | TIN 501982530
+                IPA Reg #: 6-136546287 • IRC TIN: 501982530 • Papua New Guinea
               </p>
             </div>
           </div>
@@ -637,52 +781,64 @@ function TunzAccessoriesSuite() {
         </div>
       </header>
 
+      {/* PUBLIC CLIENT PORTAL */}
       {mode === 'public' && (
         <main className="max-w-6xl mx-auto px-4 py-8">
-          <div className="bg-gradient-to-r from-[#162238] via-[#1f304f] to-[#162238] text-white rounded-2xl p-6 md:p-8 mb-6 shadow-lg border border-[#9A7B3E]/30">
-            <div className="max-w-3xl">
+          {/* CLEAN LANDING HERO WITH ONLY TUNZ ACCESSORIES AS THE MAIN TITLE */}
+          <div className="bg-gradient-to-r from-[#162238] via-[#1f304f] to-[#162238] text-white rounded-2xl p-6 md:p-8 mb-6 shadow-lg border border-[#9A7B3E]/30 flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="max-w-2xl">
               <span className="inline-block text-xs font-bold uppercase tracking-widest text-[#E5C98B] mb-1.5">
-                Papua New Guinea Commercial Enterprise • Port Moresby & Kavieng
+                Papua New Guinea Commercial Enterprise
               </span>
-              <h2 className="text-2xl md:text-3xl font-extrabold mb-2">
-                Tunz Accessories — Fleet Hire, Organic Soaps & Payment Portal
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-2">
+                Tunz Accessories
               </h2>
               <p className="text-sm text-slate-300 mb-4">
-                Book a vehicle in Kavieng, order Tunz Organics soaps or corporate IT & merchandise, or upload your BSP payment receipt for instant verification.
+                Select a division below to access vehicle hire, chauffeur & parcel delivery services, organic coconut oil products, IT & custom merchandise, or our online payment portal.
               </p>
               <div className="flex flex-wrap gap-4 text-xs text-slate-200">
                 <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-[#E5C98B]" /> +675 7962 5068</span>
                 <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#E5C98B]" /> tuneabel@gmail.com</span>
-                <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-[#E5C98B]" /> Port Moresby & Kavieng, PNG</span>
+                <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-[#E5C98B]" /> NGI • Southern • Momase • Highlands</span>
               </div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 shadow-xl border-2 border-[#9A7B3E] shrink-0">
+              <img
+                src={TA_LOGO_URL}
+                alt="Tunz Accessories Official Brand"
+                className="h-24 md:h-28 w-auto object-contain"
+              />
             </div>
           </div>
 
+          {/* 4-Card Division Switcher */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
             <button
               onClick={() => { setPublicTab('cars'); setSubmitSuccess(null); }}
-              className={`p-4 rounded-xl border-2 text-left transition flex items-center gap-3 ${
+              className={`p-3.5 rounded-xl border-2 text-left transition flex items-center gap-3 ${
                 publicTab === 'cars' ? 'bg-white border-[#9A7B3E] shadow-md' : 'bg-white/70 border-slate-200 hover:bg-white'
               }`}
             >
-              <div className="w-10 h-10 rounded-lg bg-[#162238] text-[#E5C98B] flex items-center justify-center shrink-0">
-                <Car className="w-5 h-5" />
-              </div>
+              <img
+                src={TC_LOGO_URL}
+                alt="Tunz Cars Logo"
+                className="w-12 h-12 rounded-lg object-contain bg-white border border-slate-100 p-0.5 shrink-0"
+              />
               <div>
                 <div className="text-[10px] font-bold uppercase text-[#9A7B3E]">Subsidiary 01</div>
-                <div className="font-extrabold text-sm text-slate-900">Tunz Cars Hire</div>
-                <div className="text-[11px] text-slate-500">Kavieng Fleet Rentals</div>
+                <div className="font-extrabold text-sm text-slate-900">Tunz Cars</div>
+                <div className="text-[11px] text-slate-500">Hire, Chauffeur & Parcels</div>
               </div>
             </button>
 
             <button
               onClick={() => { setPublicTab('organics'); setSubmitSuccess(null); setOrderForm(f => ({ ...f, itemId: 'TA-ORG-01', quantity: 10 })); }}
-              className={`p-4 rounded-xl border-2 text-left transition flex items-center gap-3 ${
+              className={`p-3.5 rounded-xl border-2 text-left transition flex items-center gap-3 ${
                 publicTab === 'organics' ? 'bg-white border-[#9A7B3E] shadow-md' : 'bg-white/70 border-slate-200 hover:bg-white'
               }`}
             >
-              <div className="w-10 h-10 rounded-lg bg-emerald-800 text-emerald-100 flex items-center justify-center shrink-0">
-                <Sparkles className="w-5 h-5" />
+              <div className="w-12 h-12 rounded-lg bg-emerald-800 text-emerald-100 flex items-center justify-center shrink-0">
+                <Sparkles className="w-6 h-6" />
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase text-emerald-700">Subsidiary 02</div>
@@ -693,12 +849,12 @@ function TunzAccessoriesSuite() {
 
             <button
               onClick={() => { setPublicTab('tech'); setSubmitSuccess(null); setOrderForm(f => ({ ...f, itemId: 'TA-TECH-01', quantity: 2 })); }}
-              className={`p-4 rounded-xl border-2 text-left transition flex items-center gap-3 ${
+              className={`p-3.5 rounded-xl border-2 text-left transition flex items-center gap-3 ${
                 publicTab === 'tech' ? 'bg-white border-[#9A7B3E] shadow-md' : 'bg-white/70 border-slate-200 hover:bg-white'
               }`}
             >
-              <div className="w-10 h-10 rounded-lg bg-[#9E2A2B] text-white flex items-center justify-center shrink-0">
-                <Laptop className="w-5 h-5" />
+              <div className="w-12 h-12 rounded-lg bg-[#9E2A2B] text-white flex items-center justify-center shrink-0">
+                <Laptop className="w-6 h-6" />
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase text-[#9E2A2B]">Division 03</div>
@@ -709,12 +865,12 @@ function TunzAccessoriesSuite() {
 
             <button
               onClick={() => { setPublicTab('pay'); setSubmitSuccess(null); }}
-              className={`p-4 rounded-xl border-2 text-left transition flex items-center gap-3 ${
+              className={`p-3.5 rounded-xl border-2 text-left transition flex items-center gap-3 ${
                 publicTab === 'pay' ? 'bg-white border-emerald-600 shadow-md ring-2 ring-emerald-500/20' : 'bg-white/70 border-slate-200 hover:bg-white'
               }`}
             >
-              <div className="w-10 h-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                <CreditCard className="w-5 h-5" />
+              <div className="w-12 h-12 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                <CreditCard className="w-6 h-6" />
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase text-emerald-700">Customer Billing</div>
@@ -742,6 +898,14 @@ function TunzAccessoriesSuite() {
                   <p><strong>Quantity / Duration:</strong> {submitSuccess.qty} × {formatPGK(submitSuccess.unitRate)}</p>
                 )}
                 <p><strong>Details:</strong> {submitSuccess.details}</p>
+                {submitSuccess.googleMapsLink && (
+                  <p>
+                    <strong>Google Maps Route:</strong>{' '}
+                    <a href={submitSuccess.googleMapsLink} target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">
+                      Open Location Pin / Route
+                    </a>
+                  </p>
+                )}
                 <p><strong>Amount (PGK):</strong> <span className="font-bold text-[#9E2A2B]">{formatPGK(submitSuccess.totalAmount)}</span></p>
               </div>
               <div className="flex flex-wrap justify-center gap-3">
@@ -983,106 +1147,306 @@ function TunzAccessoriesSuite() {
               </div>
             </div>
           ) : publicTab === 'cars' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-4">
-                <h3 className="text-lg font-bold text-[#162238]">1. Select Kavieng Fleet Vehicle</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {publicVehicles.map((v) => {
-                    const isSelected = selectedVehicle?.id === v.id;
-                    const isAvail = v.status === 'Available';
-                    return (
-                      <div
-                        key={v.id}
-                        onClick={() => isAvail && setCarForm({ ...carForm, vehicleId: v.id })}
-                        className={`rounded-xl border-2 p-5 transition cursor-pointer bg-white ${
-                          isSelected ? 'border-[#9A7B3E] ring-2 ring-[#9A7B3E]/20 shadow-md' : isAvail ? 'border-slate-200 hover:border-slate-300' : 'border-slate-200 opacity-60 cursor-not-allowed'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">{v.category}</span>
-                          <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${isAvail ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                            {v.status}
-                          </span>
-                        </div>
-                        <h4 className="text-lg font-bold text-slate-900">{v.name}</h4>
-                        <p className="text-xs text-slate-500 mb-3">{v.seats} • Rego: {v.plate}</p>
-                        <p className="text-xs text-slate-600 mb-4">{v.highlights}</p>
-                        <div className="pt-3 border-t border-slate-100 flex items-baseline justify-between">
-                          <div>
-                            <span className="text-xl font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</span>
-                            <span className="text-xs text-slate-500"> / day (GST Incl.)</span>
-                          </div>
-                          {isSelected && <span className="text-xs font-bold text-[#9A7B3E]">Selected ✓</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
+            /* TUNZ CARS PUBLIC PORTAL: HIRE, CHAUFFEURS, PARCEL DELIVERY + PNG REGION/TOWN + GOOGLE MAPS */
+            <div className="space-y-6">
+              {/* Tunz Cars Division Banner */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <img
+                    src={TC_LOGO_URL}
+                    alt="Tunz Cars Official Logo"
+                    className="h-16 w-16 rounded-xl object-contain border border-slate-200 p-1 bg-white shadow-sm"
+                  />
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#9A7B3E]">A Subsidiary of Tunz Accessories</span>
+                    <h3 className="text-xl font-extrabold text-[#162238]">Tunz Cars — Vehicle Hire, Chauffeurs & Parcel Delivery</h3>
+                    <p className="text-xs text-slate-500">Filter by PNG Region & Town, select your service mode, and pin your exact location via Google Maps.</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
-                <h3 className="text-lg font-bold text-[#162238] mb-4">2. Vehicle Reservation</h3>
-                <form onSubmit={handleCarSubmit} className="space-y-3.5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Pickup Date *</label>
-                      <input type="date" required value={carForm.startDate} onChange={e => setCarForm({ ...carForm, startDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              {/* Service Mode Selector (Hire, Chauffeurs, Parcel Pick up & Delivery) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  {
+                    id: 'Vehicle Hire (Self-Drive)',
+                    title: 'Vehicle Hire (Self-Drive)',
+                    desc: 'Daily self-drive rental across town & highway',
+                    badge: 'Daily Rate'
+                  },
+                  {
+                    id: 'Chauffeur Service',
+                    title: 'Chauffeur Service',
+                    desc: 'Dedicated professional PNG driver (+K50/day)',
+                    badge: 'Driver Included'
+                  },
+                  {
+                    id: 'Parcel Pick up & Delivery',
+                    title: 'Parcel Pick up & Delivery',
+                    desc: 'Same-day courier & cargo drop-off (From K65)',
+                    badge: 'Point-to-Point'
+                  }
+                ].map((srv) => {
+                  const active = carForm.serviceType === srv.id;
+                  return (
+                    <button
+                      key={srv.id}
+                      type="button"
+                      onClick={() => setCarForm(prev => ({ ...prev, serviceType: srv.id }))}
+                      className={`p-4 rounded-xl border-2 text-left transition ${
+                        active ? 'bg-[#162238] text-white border-[#9A7B3E] shadow-md' : 'bg-white text-slate-900 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${active ? 'bg-[#9A7B3E] text-white' : 'bg-slate-100 text-slate-600'}`}>
+                          {srv.badge}
+                        </span>
+                        {active && <span className="text-xs font-bold text-[#E5C98B]">Active ✓</span>}
+                      </div>
+                      <div className="font-extrabold text-sm mt-1">{srv.title}</div>
+                      <div className={`text-xs mt-0.5 ${active ? 'text-slate-300' : 'text-slate-500'}`}>{srv.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* PNG Region & Town Filter Bar */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#162238]">
+                  <MapPin className="w-4 h-4 text-[#9E2A2B]" /> Filter Fleet by PNG Location:
+                </div>
+                <select
+                  value={filterRegion}
+                  onChange={(e) => { setFilterRegion(e.target.value); setFilterTown('All'); }}
+                  className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold bg-slate-50"
+                >
+                  <option value="All">All 4 PNG Regions</option>
+                  {Object.keys(PNG_REGIONS_AND_TOWNS).map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <select
+                  value={filterTown}
+                  onChange={(e) => setFilterTown(e.target.value)}
+                  className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold bg-slate-50"
+                >
+                  <option value="All">All Towns</option>
+                  {(filterRegion === 'All'
+                    ? Object.values(PNG_REGIONS_AND_TOWNS).flat()
+                    : PNG_REGIONS_AND_TOWNS[filterRegion] || []
+                  ).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Left 2 Columns: Fleet Cards + Live Google Maps Pin & Route Preview */}
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-bold text-[#162238]">1. Select Fleet Vehicle ({publicVehicles.length} Available)</h3>
+                    {publicVehicles.length === 0 ? (
+                      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+                        No fleet vehicles listed in this town yet. Switch filter to "All 4 PNG Regions" or contact us for special deployment.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {publicVehicles.map((v) => {
+                          const isSelected = selectedVehicle?.id === v.id;
+                          const isAvail = v.status === 'Available';
+                          return (
+                            <div
+                              key={v.id}
+                              onClick={() => isAvail && setCarForm({ ...carForm, vehicleId: v.id })}
+                              className={`rounded-xl border-2 p-5 transition cursor-pointer bg-white ${
+                                isSelected ? 'border-[#9A7B3E] ring-2 ring-[#9A7B3E]/20 shadow-md' : isAvail ? 'border-slate-200 hover:border-slate-300' : 'border-slate-200 opacity-60 cursor-not-allowed'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <span className="text-xs font-bold uppercase tracking-wider text-[#9A7B3E]">
+                                  {v.town || 'Kavieng'} • {v.category}
+                                </span>
+                                <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${isAvail ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                  {v.status}
+                                </span>
+                              </div>
+                              <h4 className="text-lg font-bold text-slate-900">{v.name}</h4>
+                              <p className="text-xs text-slate-500 mb-2">{v.seats} • Plate: {v.plate}</p>
+                              <p className="text-[11px] font-semibold text-slate-600 mb-3 flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-[#9E2A2B]" /> {v.region || 'New Guinea Islands (NGI)'} ({v.town || 'Kavieng'})
+                              </p>
+                              <p className="text-xs text-slate-600 mb-4">{v.highlights}</p>
+                              <div className="pt-3 border-t border-slate-100 flex items-baseline justify-between">
+                                <div>
+                                  <span className="text-xl font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</span>
+                                  <span className="text-xs text-slate-500"> / day (GST Incl.)</span>
+                                </div>
+                                {isSelected && <span className="text-xs font-bold text-[#9A7B3E]">Selected ✓</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* GOOGLE MAPS INTERACTIVE LOCATION & ROUTE PREVIEW */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-[#162238] text-sm flex items-center gap-1.5">
+                          <Navigation className="w-4 h-4 text-[#9E2A2B]" /> Google Maps Precise Pickup & Route Preview
+                        </h4>
+                        <p className="text-xs text-slate-500">Verify your pickup landmark or capture your live GPS pin before booking.</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleUseCurrentGPS}
+                          className="px-3 py-1.5 rounded-lg bg-[#162238] hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-[#E5C98B]" /> Use My GPS Pin
+                        </button>
+                        <a
+                          href={googleMapsDirectionsUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-xs font-bold flex items-center gap-1 text-slate-700"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> Open in Google Maps
+                        </a>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Return Date *</label>
-                      <input type="date" required min={carForm.startDate} value={carForm.endDate} onChange={e => setCarForm({ ...carForm, endDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    {gpsStatus && <p className="text-xs font-semibold text-emerald-700">{gpsStatus}</p>}
+                    <div className="w-full h-64 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                      <iframe
+                        title="Tunz Cars Google Maps Location"
+                        width="100%"
+                        height="100%"
+                        style={{ border: 0 }}
+                        loading="lazy"
+                        src={`https://maps.google.com/maps?q=${mapQueryLocation}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                      />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name *</label>
-                    <input type="text" required placeholder="e.g., Dr. John Kila" value={carForm.clientName} onChange={e => setCarForm({ ...carForm, clientName: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Organization / Hospital / LLG</label>
-                    <input type="text" placeholder="e.g., Kavieng General Hospital" value={carForm.organization} onChange={e => setCarForm({ ...carForm, organization: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
+                </div>
+
+                {/* Right Column: Reservation / Chauffeur / Parcel Form */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
+                  <h3 className="text-lg font-bold text-[#162238] mb-1">2. {carForm.serviceType}</h3>
+                  <p className="text-xs text-slate-500 mb-4">Base Location: {selectedVehicle?.town || 'Kavieng'}, {selectedVehicle?.region || 'NGI'}</p>
+                  <form onSubmit={handleCarSubmit} className="space-y-3.5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          {isParcelMode ? 'Pickup Date *' : 'Start Date *'}
+                        </label>
+                        <input type="date" required value={carForm.startDate} onChange={e => setCarForm({ ...carForm, startDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      {!isParcelMode && (
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Return Date *</label>
+                          <input type="date" required min={carForm.startDate} value={carForm.endDate} onChange={e => setCarForm({ ...carForm, endDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      )}
+                    </div>
+
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Phone / WhatsApp *</label>
-                      <input type="text" required placeholder="+675 7XXX XXXX" value={carForm.phone} onChange={e => setCarForm({ ...carForm, phone: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name *</label>
+                      <input type="text" required placeholder="e.g., Dr. John Kila" value={carForm.clientName} onChange={e => setCarForm({ ...carForm, clientName: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
                     </div>
+
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Driver Licence # *</label>
-                      <input type="text" required placeholder="PNG Licence" value={carForm.licenseNo} onChange={e => setCarForm({ ...carForm, licenseNo: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Organization / Hospital / Business</label>
+                      <input type="text" placeholder="e.g., Kavieng General Hospital" value={carForm.organization} onChange={e => setCarForm({ ...carForm, organization: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Phone / WhatsApp *</label>
+                        <input type="text" required placeholder="+675 7XXX XXXX" value={carForm.phone} onChange={e => setCarForm({ ...carForm, phone: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      {carForm.serviceType === 'Vehicle Hire (Self-Drive)' && (
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Driver Licence # *</label>
+                          <input type="text" required placeholder="PNG Licence" value={carForm.licenseNo} onChange={e => setCarForm({ ...carForm, licenseNo: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      )}
+                    </div>
+
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Hire Type</label>
-                      <select value={carForm.hireType} onChange={e => setCarForm({ ...carForm, hireType: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                        <option>Self-Drive</option>
-                        <option>Chauffeur-Driven</option>
-                      </select>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Precise Pickup Landmark / Street *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g., Kavieng Airport Terminal / Waterfront"
+                        value={carForm.pickupAddress}
+                        onChange={e => setCarForm({ ...carForm, pickupAddress: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                      />
                     </div>
+
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Pickup Point</label>
-                      <select value={carForm.pickupLocation} onChange={e => setCarForm({ ...carForm, pickupLocation: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                        <option>Kavieng Airport (KVG)</option>
-                        <option>Kavieng Town Center</option>
-                        <option>Kavieng General Hospital</option>
-                        <option>Murat LLG Office</option>
-                      </select>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        {isParcelMode ? 'Parcel Drop-off Destination *' : 'Destination / Drop-off Point'}
+                      </label>
+                      <input
+                        type="text"
+                        required={isParcelMode}
+                        placeholder="e.g., Kavieng General Hospital / Nusa Jetty"
+                        value={carForm.dropoffAddress}
+                        onChange={e => setCarForm({ ...carForm, dropoffAddress: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                      />
                     </div>
-                  </div>
-                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-1 text-xs">
-                    <div className="flex justify-between text-slate-600">
-                      <span>{selectedVehicle?.name} × {rentalDays} day(s)</span>
-                      <span>{formatPGK(rentalTotal)}</span>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Google Maps Pin Link (Optional)</label>
+                      <input
+                        type="url"
+                        placeholder="Paste Google Maps share link or click Use My GPS Pin"
+                        value={carForm.googleMapsLink}
+                        onChange={e => setCarForm({ ...carForm, googleMapsLink: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono"
+                      />
                     </div>
-                    <div className="flex justify-between font-extrabold text-sm text-[#162238] pt-1.5 border-t border-slate-200">
-                      <span>Estimated Total (GST Incl.)</span>
-                      <span>{formatPGK(rentalTotal)}</span>
+
+                    {isParcelMode && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Parcel Description & Recipient *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g., 2x Cartons Medical Supplies — Attn: Nurse Mary"
+                          value={carForm.parcelDetails}
+                          onChange={e => setCarForm({ ...carForm, parcelDetails: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                        />
+                      </div>
+                    )}
+
+                    <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-1 text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span>{isParcelMode ? 'Point-to-Point Parcel Delivery' : `${selectedVehicle?.name} × ${rentalDays} day(s)`}</span>
+                        <span>{formatPGK(baseCarCost)}</span>
+                      </div>
+                      {serviceSurcharge > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                          <span>Chauffeur Allowance ({rentalDays}d × K50)</span>
+                          <span>{formatPGK(serviceSurcharge)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-extrabold text-sm text-[#162238] pt-1.5 border-t border-slate-200">
+                        <span>Estimated Total (GST Incl.)</span>
+                        <span>{formatPGK(rentalTotal)}</span>
+                      </div>
                     </div>
-                  </div>
-                  <button type="submit" className="w-full py-3 rounded-xl bg-[#9E2A2B] hover:bg-[#822021] text-white font-bold text-sm shadow transition">
-                    Request Vehicle Booking
-                  </button>
-                </form>
+
+                    <button type="submit" className="w-full py-3 rounded-xl bg-[#9E2A2B] hover:bg-[#822021] text-white font-bold text-sm shadow transition">
+                      Submit {carForm.serviceType}
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
           ) : (
@@ -1173,6 +1537,7 @@ function TunzAccessoriesSuite() {
         </main>
       )}
 
+      {/* OWNER ADMIN COMMAND CENTER (PIN: 2026) */}
       {mode === 'admin' && (
         <main className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-3">
@@ -1229,9 +1594,12 @@ function TunzAccessoriesSuite() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                   <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7B3E]">Subsidiary 01</span>
-                      <h3 className="font-bold text-slate-900">Tunz Cars — Kavieng Live Fleet</h3>
+                    <div className="flex items-center gap-3">
+                      <img src={TC_LOGO_URL} alt="Tunz Cars" className="w-10 h-10 rounded-lg object-contain border" />
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7B3E]">Subsidiary 01</span>
+                        <h3 className="font-bold text-slate-900">Tunz Cars — Live PNG Fleet</h3>
+                      </div>
                     </div>
                     <button onClick={() => setVehModal({ open: true, data: null })} className="px-3 py-1.5 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1">
                       <Plus className="w-3.5 h-3.5" /> Add Vehicle
@@ -1242,7 +1610,9 @@ function TunzAccessoriesSuite() {
                       <div key={v.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50/60">
                         <div>
                           <div className="font-bold text-sm">{v.name} <span className="text-xs font-mono text-slate-500">({v.plate})</span></div>
-                          <div className="text-xs text-slate-500">{formatPGK(v.dailyRate)}/day • Odo: {Number(v.odometer).toLocaleString()} km</div>
+                          <div className="text-xs text-slate-500">
+                            <span className="font-semibold text-[#9A7B3E]">{v.town || 'Kavieng'} ({v.region || 'NGI'})</span> • {formatPGK(v.dailyRate)}/day
+                          </div>
                         </div>
                         <select
                           value={v.status}
@@ -1261,9 +1631,12 @@ function TunzAccessoriesSuite() {
 
                 <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                   <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Subsidiaries 02 & 03</span>
-                      <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch Inventory</h3>
+                    <div className="flex items-center gap-3">
+                      <img src={TA_LOGO_URL} alt="Tunz Accessories" className="w-10 h-10 rounded-lg object-contain border p-0.5" />
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Subsidiaries 02 & 03</span>
+                        <h3 className="font-bold text-slate-900">Tunz Organics & Tech/Merch Inventory</h3>
+                      </div>
                     </div>
                     <button onClick={() => setCatModal({ open: true, data: null })} className="px-3 py-1.5 rounded-lg bg-[#9A7B3E] text-white text-xs font-bold flex items-center gap-1">
                       <Plus className="w-3.5 h-3.5" /> Add Product
@@ -1290,7 +1663,7 @@ function TunzAccessoriesSuite() {
 
           {adminTab === 'requests' && (
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-              <h3 className="font-bold text-slate-900 mb-4">Incoming Bookings & Wholesale Orders (All Divisions)</h3>
+              <h3 className="font-bold text-slate-900 mb-4">Incoming Bookings, Chauffeurs, Parcels & Wholesale Orders</h3>
               {inquiries.length === 0 ? (
                 <p className="text-sm text-slate-500 py-8 text-center">No client requests submitted yet.</p>
               ) : (
@@ -1300,7 +1673,7 @@ function TunzAccessoriesSuite() {
                       <tr>
                         <th className="p-3">Ref / Division</th>
                         <th className="p-3">Client / Organization</th>
-                        <th className="p-3">Item / Vehicle</th>
+                        <th className="p-3">Service / Location</th>
                         <th className="p-3">Total (GST Incl.)</th>
                         <th className="p-3">Status</th>
                         <th className="p-3">Action</th>
@@ -1320,6 +1693,11 @@ function TunzAccessoriesSuite() {
                           <td className="p-3 text-xs">
                             <div className="font-bold">{inq.itemSummary} (×{inq.qty})</div>
                             <div className="text-slate-500">{inq.details}</div>
+                            {inq.googleMapsLink && (
+                              <a href={inq.googleMapsLink} target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold inline-flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3" /> View Map Pin
+                              </a>
+                            )}
                           </td>
                           <td className="p-3 font-extrabold">{formatPGK(inq.totalAmount)}</td>
                           <td className="p-3">
@@ -1418,9 +1796,12 @@ function TunzAccessoriesSuite() {
           {adminTab === 'cars' && (
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
               <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h3 className="font-bold text-slate-900">Tunz Cars — Fleet Registry & Rate Controls</h3>
-                  <p className="text-xs text-slate-500">Add, edit, or delete vehicles and update daily PGK rates.</p>
+                <div className="flex items-center gap-3">
+                  <img src={TC_LOGO_URL} alt="Tunz Cars" className="w-11 h-11 rounded-lg object-contain border" />
+                  <div>
+                    <h3 className="font-bold text-slate-900">Tunz Cars — PNG Fleet Registry, Regions & Rates</h3>
+                    <p className="text-xs text-slate-500">Assign vehicles across NGI, Southern, Momase & Highlands towns and adjust daily PGK rates.</p>
+                  </div>
                 </div>
                 <button onClick={() => setVehModal({ open: true, data: null })} className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
                   <Plus className="w-4 h-4" /> Add Vehicle
@@ -1432,6 +1813,7 @@ function TunzAccessoriesSuite() {
                     <tr>
                       <th className="p-3">ID / Plate</th>
                       <th className="p-3">Vehicle</th>
+                      <th className="p-3">PNG Region & Town</th>
                       <th className="p-3">Daily Rate</th>
                       <th className="p-3">Odometer / Service</th>
                       <th className="p-3">Status</th>
@@ -1445,6 +1827,10 @@ function TunzAccessoriesSuite() {
                         <td className="p-3">
                           <div className="font-bold">{v.name}</div>
                           <div className="text-xs text-slate-500">{v.seats}</div>
+                        </td>
+                        <td className="p-3 text-xs">
+                          <div className="font-bold text-[#9A7B3E]">{v.town || 'Kavieng'}</div>
+                          <div className="text-slate-500">{v.region || 'New Guinea Islands (NGI)'}</div>
                         </td>
                         <td className="p-3 font-extrabold text-[#162238]">{formatPGK(v.dailyRate)}</td>
                         <td className="p-3 text-xs">{Number(v.odometer).toLocaleString()} / {Number(v.nextServiceKm).toLocaleString()} km</td>
@@ -1513,7 +1899,7 @@ function TunzAccessoriesSuite() {
               <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
                 <div>
                   <h3 className="font-bold text-slate-900">Group Quotations, Proforma Invoices & Official Receipts</h3>
-                  <p className="text-xs text-slate-500">Issued under Tunz Accessories (IPA 6-136546287 • TIN 501982530)</p>
+                  <p className="text-xs text-slate-500">Automatically branded with Tunz Cars or Tunz Accessories logo based on division</p>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => exportCSV('Tunz_Accessories_Billing.csv', documents)} className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-bold flex items-center gap-1">
@@ -1702,6 +2088,7 @@ function TunzAccessoriesSuite() {
         </div>
       )}
 
+      {/* VEHICLE ADD/EDIT MODAL WITH 4 PNG REGIONS & TOWNS */}
       {vehModal.open && (
         <VehicleModal initial={vehModal.data} onClose={() => setVehModal({ open: false, data: null })} onSave={saveVehicle} />
       )}
@@ -1745,6 +2132,7 @@ function TunzAccessoriesSuite() {
         <ExpenseModal onClose={() => setExpModal(false)} onSave={logExpense} />
       )}
 
+      {/* A4 CORPORATE DOCUMENT PREVIEW WITH DIVISION-SPECIFIC LOGO */}
       {previewDoc && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl max-w-3xl w-full p-8 shadow-2xl my-8">
@@ -1759,14 +2147,27 @@ function TunzAccessoriesSuite() {
             </div>
 
             <div className="space-y-6 text-slate-900">
-              <div className="flex justify-between items-start border-b-2 border-[#9E2A2B] pb-4">
-                <div>
-                  <h2 className="text-2xl font-extrabold text-[#162238]">TUNZ ACCESSORIES</h2>
-                  <p className="text-xs font-bold text-[#9A7B3E]">Operating Division: {previewDoc.division}</p>
-                  <p className="text-xs text-slate-600 mt-1">Phone: +675 7962 5068 • Email: tuneabel@gmail.com</p>
-                  <p className="text-xs text-slate-600">IPA Reg #: 6-136546287 • IRC TIN: 501982530</p>
+              <div className="flex justify-between items-start border-b-2 border-[#9E2A2B] pb-4 gap-4">
+                <div className="flex items-center gap-4">
+                  <img
+                    src={previewDoc.division === 'Tunz Cars' ? TC_LOGO_URL : TA_LOGO_URL}
+                    alt={previewDoc.division === 'Tunz Cars' ? 'Tunz Cars Logo' : 'Tunz Accessories Logo'}
+                    className="h-20 w-auto object-contain shrink-0"
+                  />
+                  <div>
+                    <h2 className="text-2xl font-extrabold text-[#162238]">
+                      {previewDoc.division === 'Tunz Cars' ? 'TUNZ CARS' : 'TUNZ ACCESSORIES'}
+                    </h2>
+                    <p className="text-xs font-bold text-[#9A7B3E]">
+                      {previewDoc.division === 'Tunz Cars'
+                        ? 'A Subsidiary of Tunz Accessories'
+                        : `Operating Division: ${previewDoc.division}`}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-1">Phone: +675 7962 5068 • Email: tuneabel@gmail.com</p>
+                    <p className="text-xs text-slate-600">IPA Reg #: 6-136546287 • IRC TIN: 501982530</p>
+                  </div>
                 </div>
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <h3 className="text-xl font-extrabold uppercase text-[#162238]">{previewDoc.type}</h3>
                   <p className="font-mono text-xs font-bold text-[#9E2A2B]">{previewDoc.id}</p>
                   <p className="text-xs text-slate-600 mt-1">Date: {previewDoc.date}</p>
@@ -1794,7 +2195,7 @@ function TunzAccessoriesSuite() {
                     <td className="p-3">
                       <div className="font-bold">{previewDoc.itemSummary}</div>
                       {previewDoc.division === 'Tunz Cars' && (
-                        <div className="text-slate-500">Hire Period: {previewDoc.startDate} to {previewDoc.endDate}</div>
+                        <div className="text-slate-500">Schedule: {previewDoc.startDate} to {previewDoc.endDate}</div>
                       )}
                       <div className="text-slate-500">{previewDoc.notes}</div>
                     </td>
@@ -1838,13 +2239,29 @@ function TunzAccessoriesSuite() {
 }
 
 function VehicleModal({ initial, onClose, onSave }) {
+  const defaultRegion = initial?.region || 'New Guinea Islands (NGI)';
   const [form, setForm] = useState(
-    initial || { name: '', plate: '', category: 'SUV / AWD', seats: '5 Seats • Auto', dailyRate: 250, status: 'Available', odometer: 0, nextServiceKm: 5000, highlights: '' }
+    initial || {
+      name: '',
+      plate: '',
+      category: 'SUV / AWD',
+      seats: '5 Seats • Auto',
+      region: 'New Guinea Islands (NGI)',
+      town: 'Kavieng',
+      dailyRate: 250,
+      status: 'Available',
+      odometer: 0,
+      nextServiceKm: 5000,
+      highlights: ''
+    }
   );
+
+  const townsForSelectedRegion = PNG_REGIONS_AND_TOWNS[form.region] || PNG_REGIONS_AND_TOWNS[defaultRegion];
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl">
-        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Fleet Vehicle' : 'Add Fleet Vehicle'}</h3>
+        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Fleet Vehicle & Location' : 'Add Fleet Vehicle & Location'}</h3>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Vehicle Name *</label>
@@ -1855,6 +2272,39 @@ function VehicleModal({ initial, onClose, onSave }) {
             <input required value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} placeholder="KVG-999" className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
         </div>
+
+        {/* PNG 4 REGIONS & TOWNS SELECTOR */}
+        <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div>
+            <label className="block text-xs font-bold text-[#162238] mb-1">PNG Region *</label>
+            <select
+              value={form.region}
+              onChange={(e) => {
+                const newRegion = e.target.value;
+                const firstTown = (PNG_REGIONS_AND_TOWNS[newRegion] || ['Kavieng'])[0];
+                setForm({ ...form, region: newRegion, town: firstTown });
+              }}
+              className="w-full border rounded-lg px-2.5 py-2 text-xs font-semibold bg-white"
+            >
+              {Object.keys(PNG_REGIONS_AND_TOWNS).map(reg => (
+                <option key={reg} value={reg}>{reg}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-[#162238] mb-1">Town / Center *</label>
+            <select
+              value={form.town}
+              onChange={(e) => setForm({ ...form, town: e.target.value })}
+              className="w-full border rounded-lg px-2.5 py-2 text-xs font-semibold bg-white"
+            >
+              {townsForSelectedRegion.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Daily Rate (PGK)</label>
