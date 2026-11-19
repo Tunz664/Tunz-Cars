@@ -235,6 +235,15 @@ const INITIAL_DOCS = [
   }
 ];
 
+const calcDaysInclusive = (startStr, endStr) => {
+  if (!startStr || !endStr) return 1;
+  const s = new Date(startStr + 'T00:00:00');
+  const e = new Date(endStr + 'T00:00:00');
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return 1;
+  const diff = Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1;
+  return diff > 0 ? diff : 1;
+};
+
 const formatPGK = (val) => `K ${Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const numberToWordsPGK = (amount) => {
@@ -353,7 +362,6 @@ function TunzAccessoriesSuite() {
   const [paymentSubmissions, setPaymentSubmissions] = useState([]);
   const [expenses, setExpenses] = useState([]);
 
-  // Customer Receipt Lookup State
   const [receiptLookupInput, setReceiptLookupInput] = useState('');
 
   const [adminTab, setAdminTab] = useState('overview');
@@ -469,26 +477,25 @@ function TunzAccessoriesSuite() {
     } catch (e) { console.error(e); }
   };
 
-  const calcDays = (s, e) => {
-    if (!s || !e) return 1;
-    const diff = Math.ceil((new Date(e) - new Date(s)) / (1000 * 60 * 60 * 24)) + 1;
-    return diff > 0 ? diff : 1;
-  };
-
   const buildCustomerShareText = (docItem) => {
+    const qtyVal = Number(docItem.qty || 1);
+    const label = docItem.unitLabel || (docItem.division === 'Tunz Cars' ? (qtyVal === 1 ? 'Day' : 'Days') : 'Units');
+    const periodLine = (docItem.division === 'Tunz Cars' && docItem.startDate && docItem.endDate)
+      ? `Period: ${docItem.startDate} to ${docItem.endDate} (${qtyVal} ${label})`
+      : `Quantity: ${qtyVal} ${label} @ ${formatPGK(docItem.unitRate)}`;
     return [
-      `*${settings.companyName} — Official Receipt*`,
-      `Receipt #: ${docItem.id}`,
+      `*${settings.companyName} — ${docItem.type || 'Official Receipt'}*`,
+      `Ref #: ${docItem.id}`,
       `Division: ${docItem.division}`,
       `Client: ${docItem.clientName}`,
       `Item / Service: ${docItem.itemSummary}`,
-      `Amount Paid (PGK): ${formatPGK(docItem.totalAmount)}`,
+      periodLine,
+      `Total Amount (PGK): ${formatPGK(docItem.totalAmount)}`,
       `Payment Ref: ${docItem.paymentRef || 'Verified'}`,
       `Date: ${docItem.date}`,
       `Bank Acc: ${settings.bankName} (${settings.accountNumber})`,
       `TIN: ${settings.tinNumber} • IPA: ${settings.ipaNumber}`
-    ].join('
-');
+    ].join('\n');
   };
 
   const activeCarServices = useMemo(() => carServices.filter(s => s.active !== false), [carServices]);
@@ -523,7 +530,7 @@ function TunzAccessoriesSuite() {
   }, [selectedVehicle?.id]);
 
   const isFlatTripService = selectedCarService?.pricingMode === 'flat_trip';
-  const rentalDays = isFlatTripService ? 1 : calcDays(carForm.startDate, carForm.endDate);
+  const rentalDays = isFlatTripService ? 1 : calcDaysInclusive(carForm.startDate, carForm.endDate);
   const serviceExtraCost = isFlatTripService
     ? Number(selectedCarService?.rate || 65)
     : Number(selectedCarService?.rate || 0) * rentalDays;
@@ -583,7 +590,10 @@ function TunzAccessoriesSuite() {
     if (!selectedVehicle) return;
     const id = `TC-BK-2026-${String(inquiries.length + 101).padStart(3, '0')}`;
     const mapNote = carForm.googleMapsLink ? ` • Map Pin: ${carForm.googleMapsLink}` : '';
-    const extraInfo = `${selectedCarService.title} • Pickup: ${carForm.pickupAddress} → Dropoff: ${carForm.dropoffAddress}${
+    const scheduleStr = isFlatTripService
+      ? `${carForm.startDate} (1 Trip)`
+      : `${carForm.startDate} to ${carForm.endDate} (${rentalDays} ${rentalDays === 1 ? 'Day' : 'Days'})`;
+    const extraInfo = `${selectedCarService.title} • ${scheduleStr} • Pickup: ${carForm.pickupAddress} → Dropoff: ${carForm.dropoffAddress}${
       carForm.serviceNotes ? ` • Note: ${carForm.serviceNotes}` : ''
     }${carForm.licenseNo ? ` • Lic: ${carForm.licenseNo}` : ''}${mapNote}`;
 
@@ -591,6 +601,7 @@ function TunzAccessoriesSuite() {
       id,
       division: 'Tunz Cars',
       serviceType: selectedCarService.title,
+      pricingMode: selectedCarService.pricingMode || 'per_day',
       clientName: carForm.clientName,
       organization: carForm.organization,
       phone: carForm.phone,
@@ -598,6 +609,7 @@ function TunzAccessoriesSuite() {
       startDate: carForm.startDate,
       endDate: isFlatTripService ? carForm.startDate : carForm.endDate,
       qty: rentalDays,
+      unitLabel: isFlatTripService ? 'Trip' : (rentalDays === 1 ? 'Day' : 'Days'),
       unitRate: isFlatTripService
         ? Number(selectedCarService.rate || 65)
         : Number(selectedVehicle.dailyRate || 250) + Number(selectedCarService.rate || 0),
@@ -629,6 +641,7 @@ function TunzAccessoriesSuite() {
       startDate: new Date().toISOString().slice(0, 10),
       endDate: new Date().toISOString().slice(0, 10),
       qty: Number(orderForm.quantity || 1),
+      unitLabel: 'Units',
       unitRate: effectiveProductPrice,
       totalAmount: orderTotal,
       details: `Delivery: ${orderForm.deliveryLocation}${orderForm.notes ? ` • ${orderForm.notes}` : ''}`,
@@ -687,19 +700,16 @@ function TunzAccessoriesSuite() {
     });
   };
 
-  // Auto-Generate Official Receipt & Prepare Instant Dispatch to Customer upon Verification
+  // Auto-Generate Official Receipt preserving exact Days, Start/End Dates, and Daily Rate!
   const verifyPaymentSubmission = async (sub) => {
     const receiptNum = `TA-RCT-2026-${String(documents.length + 1).padStart(3, '0')}`;
     const updatedSub = { ...sub, status: 'Verified & Receipted', generatedReceiptId: receiptNum };
     setPaymentSubmissions(prev => prev.map(s => s.id === sub.id ? updatedSub : s));
     await saveCloud('payment_submissions', sub.id, updatedSub);
 
-    const matchedDoc = documents.find(
-      d => d.id.toUpperCase() === (sub.bookingOrDocRef || '').toUpperCase()
-    );
-    const matchedInquiry = inquiries.find(
-      inq => inq.id.toUpperCase() === (sub.bookingOrDocRef || '').toUpperCase()
-    );
+    const refKey = (sub.bookingOrDocRef || '').toUpperCase();
+    const matchedDoc = documents.find(d => d.id.toUpperCase() === refKey);
+    const matchedInquiry = inquiries.find(inq => inq.id.toUpperCase() === refKey);
 
     const payId = `TA-PAY-${String(payments.length + 1).padStart(3, '0')}`;
     const payRec = {
@@ -719,8 +729,13 @@ function TunzAccessoriesSuite() {
     if (matchedDoc) {
       const newPaid = Number(matchedDoc.paidAmount || 0) + Number(sub.amountPaid || 0);
       const full = newPaid >= matchedDoc.totalAmount;
+      const resolvedQty = matchedDoc.division === 'Tunz Cars' && matchedDoc.startDate && matchedDoc.endDate && matchedDoc.unitLabel !== 'Trip'
+        ? calcDaysInclusive(matchedDoc.startDate, matchedDoc.endDate)
+        : Number(matchedDoc.qty || 1);
       generatedReceiptObj = {
         ...matchedDoc,
+        qty: resolvedQty,
+        unitLabel: matchedDoc.unitLabel || (matchedDoc.division === 'Tunz Cars' ? (resolvedQty === 1 ? 'Day' : 'Days') : 'Units'),
         paidAmount: newPaid,
         type: 'Official Receipt',
         status: full ? 'Paid in Full' : 'Part Paid',
@@ -731,6 +746,20 @@ function TunzAccessoriesSuite() {
       setDocuments(prev => prev.map(d => d.id === matchedDoc.id ? generatedReceiptObj : d));
       await saveCloud('documents', matchedDoc.id, generatedReceiptObj);
     } else {
+      const resolvedQty = matchedInquiry
+        ? (matchedInquiry.division === 'Tunz Cars' && matchedInquiry.startDate && matchedInquiry.endDate && matchedInquiry.pricingMode !== 'flat_trip'
+            ? calcDaysInclusive(matchedInquiry.startDate, matchedInquiry.endDate)
+            : Number(matchedInquiry.qty || 1))
+        : 1;
+      const resolvedUnitRate = matchedInquiry?.unitRate
+        ? Number(matchedInquiry.unitRate)
+        : Number(sub.amountPaid || 0) / resolvedQty;
+      const resolvedLabel = matchedInquiry?.unitLabel || (
+        sub.division === 'Tunz Cars'
+          ? (matchedInquiry?.pricingMode === 'flat_trip' ? 'Trip' : (resolvedQty === 1 ? 'Day' : 'Days'))
+          : 'Units'
+      );
+
       generatedReceiptObj = {
         id: receiptNum,
         division: sub.division,
@@ -744,14 +773,16 @@ function TunzAccessoriesSuite() {
         itemSummary: matchedInquiry?.itemSummary || `${sub.division} Payment (${sub.method})`,
         startDate: matchedInquiry?.startDate || sub.paymentDate,
         endDate: matchedInquiry?.endDate || sub.paymentDate,
-        qty: matchedInquiry?.qty || 1,
-        unitLabel: sub.division === 'Tunz Cars' ? 'Days/Trip' : 'Units',
-        unitRate: Number(sub.amountPaid || 0),
+        qty: resolvedQty,
+        unitLabel: resolvedLabel,
+        unitRate: resolvedUnitRate,
         totalAmount: Number(sub.amountPaid || 0),
         paidAmount: Number(sub.amountPaid || 0),
         paymentRef: sub.bankReference,
         receiptSent: false,
-        notes: `Verified Payment Ref: ${sub.bankReference} via ${sub.method}${sub.bookingOrDocRef ? ` • Booking/Ref: ${sub.bookingOrDocRef}` : ''}`
+        notes: matchedInquiry?.details
+          ? `${matchedInquiry.details} • Paid Ref: ${sub.bankReference}`
+          : `Verified Payment Ref: ${sub.bankReference} via ${sub.method}${sub.bookingOrDocRef ? ` • Booking/Ref: ${sub.bookingOrDocRef}` : ''}`
       };
       setDocuments(prev => [generatedReceiptObj, ...prev]);
       await saveCloud('documents', receiptNum, generatedReceiptObj);
@@ -793,6 +824,14 @@ function TunzAccessoriesSuite() {
     setInquiries(prev => prev.map(x => x.id === inq.id ? updated : x));
     await saveCloud('inquiries', inq.id, updated);
 
+    const isFlat = inq.pricingMode === 'flat_trip' || inq.unitLabel === 'Trip';
+    const resolvedDays = inq.division === 'Tunz Cars' && !isFlat && inq.startDate && inq.endDate
+      ? calcDaysInclusive(inq.startDate, inq.endDate)
+      : Number(inq.qty || 1);
+    const resolvedUnitLabel = inq.division === 'Tunz Cars'
+      ? (isFlat ? 'Trip' : (resolvedDays === 1 ? 'Day' : 'Days'))
+      : 'Units';
+
     const piId = `TA-PI-2026-${String(documents.length + 1).padStart(3, '0')}`;
     const newDoc = {
       id: piId,
@@ -805,10 +844,10 @@ function TunzAccessoriesSuite() {
       itemSummary: inq.itemSummary,
       startDate: inq.startDate,
       endDate: inq.endDate,
-      qty: inq.qty,
-      unitLabel: inq.division === 'Tunz Cars' ? (inq.qty === 1 ? 'Trip/Day' : 'Days') : 'Units',
-      unitRate: inq.unitRate,
-      totalAmount: inq.totalAmount,
+      qty: resolvedDays,
+      unitLabel: resolvedUnitLabel,
+      unitRate: Number(inq.unitRate || 0),
+      totalAmount: Number(inq.totalAmount || resolvedDays * Number(inq.unitRate || 0)),
       paidAmount: 0,
       notes: `${inq.details} • Ref: ${inq.id}`
     };
@@ -888,13 +927,22 @@ function TunzAccessoriesSuite() {
     const isNew = !d.id;
     const prefix = d.type === 'Quotation' ? 'TA-QT' : d.type === 'Proforma Invoice' ? 'TA-PI' : 'TA-RCT';
     const id = d.id || `${prefix}-2026-${String(documents.length + 1).padStart(3, '0')}`;
-    const qty = d.division === 'Tunz Cars' ? calcDays(d.startDate, d.endDate) : Number(d.qty || 1);
-    const totalAmount = qty * Number(d.unitRate || 0);
+    const isCars = d.division === 'Tunz Cars';
+    const isTrip = d.unitLabel === 'Trip';
+    const qty = isCars && !isTrip && d.startDate && d.endDate
+      ? calcDaysInclusive(d.startDate, d.endDate)
+      : Math.max(1, Number(d.qty || 1));
+    const unitLabel = isCars
+      ? (isTrip ? 'Trip' : (qty === 1 ? 'Day' : 'Days'))
+      : (d.unitLabel || 'Units');
+    const unitRate = Number(d.unitRate || 0);
+    const totalAmount = qty * unitRate;
     const rec = {
       ...d,
       id,
       qty,
-      unitRate: Number(d.unitRate || 0),
+      unitLabel,
+      unitRate,
       totalAmount,
       paidAmount: d.type === 'Official Receipt' ? totalAmount : Number(d.paidAmount || 0)
     };
@@ -963,8 +1011,7 @@ function TunzAccessoriesSuite() {
   const exportCSV = (filename, rows) => {
     if (!rows.length) return;
     const headers = Object.keys(rows[0]).filter(k => k !== 'receiptImage' && k !== 'images');
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('
-');
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -975,6 +1022,19 @@ function TunzAccessoriesSuite() {
   const pendingProofsCount = paymentSubmissions.filter(s => s.status === 'Pending Verification').length;
   const pendingInquiriesCount = inquiries.filter(i => i.status === 'Pending Approval').length;
   const waNumber = String(settings.whatsappNumber || '67579625068').replace(/[^0-9]/g, '');
+
+  // Helper to resolve display qty & label on any document row or A4 print
+  const getDocQtyAndLabel = (docItem) => {
+    const isCars = docItem.division === 'Tunz Cars';
+    const isTrip = docItem.unitLabel === 'Trip';
+    const qtyVal = (isCars && !isTrip && docItem.startDate && docItem.endDate)
+      ? calcDaysInclusive(docItem.startDate, docItem.endDate)
+      : Math.max(1, Number(docItem.qty || 1));
+    const unitLabel = isCars
+      ? (isTrip ? 'Trip' : (qtyVal === 1 ? 'Day' : 'Days'))
+      : (docItem.unitLabel || 'Units');
+    return { qtyVal, unitLabel };
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -1143,7 +1203,13 @@ function TunzAccessoriesSuite() {
               <div className="bg-slate-50 rounded-xl p-4 text-left text-sm space-y-1.5 mb-6 border border-slate-200">
                 <p><strong>Summary:</strong> {submitSuccess.itemSummary}</p>
                 {!submitSuccess.isPaymentProof && (
-                  <p><strong>Quantity / Duration:</strong> {submitSuccess.qty} × {formatPGK(submitSuccess.unitRate)}</p>
+                  <p>
+                    <strong>Duration / Quantity:</strong>{' '}
+                    {submitSuccess.qty} {submitSuccess.unitLabel || 'Days'} × {formatPGK(submitSuccess.unitRate)}
+                    {submitSuccess.division === 'Tunz Cars' && submitSuccess.startDate && (
+                      <span> ({submitSuccess.startDate} to {submitSuccess.endDate})</span>
+                    )}
+                  </p>
                 )}
                 <p><strong>Details:</strong> {submitSuccess.details}</p>
                 {submitSuccess.googleMapsLink && (
@@ -1178,7 +1244,7 @@ function TunzAccessoriesSuite() {
                   href={`https://wa.me/${waNumber}?text=${encodeURIComponent(
                     submitSuccess.isPaymentProof
                       ? `Hello ${settings.companyName}, I uploaded payment proof ${submitSuccess.id} for ${formatPGK(submitSuccess.totalAmount)}. ${submitSuccess.details}`
-                      : `Hello ${settings.companyName} (${submitSuccess.division}), I submitted request ${submitSuccess.id} for ${submitSuccess.itemSummary} (Total: ${formatPGK(submitSuccess.totalAmount)}).`
+                      : `Hello ${settings.companyName} (${submitSuccess.division}), I submitted request ${submitSuccess.id} for ${submitSuccess.itemSummary} (${submitSuccess.qty} ${submitSuccess.unitLabel || 'Days'}, Total: ${formatPGK(submitSuccess.totalAmount)}).`
                   )}`}
                   target="_blank"
                   rel="noreferrer"
@@ -1365,7 +1431,6 @@ function TunzAccessoriesSuite() {
                 </div>
               </div>
 
-              {/* CUSTOMER VERIFIED RECEIPT LOOKUP & PRINT/SEND SECTION */}
               <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -1387,27 +1452,32 @@ function TunzAccessoriesSuite() {
                   <p className="text-xs text-slate-500 py-4">No verified receipts match that search yet.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {matchedCustomerReceipts.map(rc => (
-                      <div key={rc.id} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 flex items-center justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-extrabold text-[#162238]">{rc.id}</span>
-                            <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                              Verified • {rc.status}
-                            </span>
+                    {matchedCustomerReceipts.map(rc => {
+                      const { qtyVal, unitLabel } = getDocQtyAndLabel(rc);
+                      return (
+                        <div key={rc.id} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-extrabold text-[#162238]">{rc.id}</span>
+                              <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                                Verified • {rc.status}
+                              </span>
+                            </div>
+                            <div className="font-bold text-sm text-slate-900 mt-1">{rc.clientName}</div>
+                            <div className="text-xs text-slate-600">
+                              {rc.itemSummary} ({qtyVal} {unitLabel}) — <strong>{formatPGK(rc.totalAmount)}</strong>
+                            </div>
                           </div>
-                          <div className="font-bold text-sm text-slate-900 mt-1">{rc.clientName}</div>
-                          <div className="text-xs text-slate-600">{rc.itemSummary} — <strong>{formatPGK(rc.totalAmount)}</strong></div>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc(rc)}
+                            className="px-3 py-2 rounded-lg bg-[#162238] hover:bg-slate-800 text-white text-xs font-bold shrink-0 flex items-center gap-1"
+                          >
+                            <Printer className="w-3.5 h-3.5" /> View / Print
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDoc(rc)}
-                          className="px-3 py-2 rounded-lg bg-[#162238] hover:bg-slate-800 text-white text-xs font-bold shrink-0 flex items-center gap-1"
-                        >
-                          <Printer className="w-3.5 h-3.5" /> View / Print
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1553,15 +1623,42 @@ function TunzAccessoriesSuite() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">{isFlatTripService ? 'Pickup Date *' : 'Start Date *'}</label>
-                        <input type="date" required value={carForm.startDate} onChange={e => setCarForm({ ...carForm, startDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                        <input
+                          type="date"
+                          required
+                          value={carForm.startDate}
+                          onChange={e => {
+                            const newStart = e.target.value;
+                            setCarForm(prev => ({
+                              ...prev,
+                              startDate: newStart,
+                              endDate: prev.endDate < newStart ? newStart : prev.endDate
+                            }));
+                          }}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                        />
                       </div>
                       {!isFlatTripService && (
                         <div>
                           <label className="block text-xs font-semibold text-slate-600 mb-1">Return Date *</label>
-                          <input type="date" required min={carForm.startDate} value={carForm.endDate} onChange={e => setCarForm({ ...carForm, endDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                          <input
+                            type="date"
+                            required
+                            min={carForm.startDate}
+                            value={carForm.endDate}
+                            onChange={e => setCarForm({ ...carForm, endDate: e.target.value })}
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                          />
                         </div>
                       )}
                     </div>
+
+                    {!isFlatTripService && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs font-bold text-[#162238] flex items-center justify-between">
+                        <span>Selected Hire Duration:</span>
+                        <span className="text-[#9E2A2B]">{rentalDays} {rentalDays === 1 ? 'Day' : 'Days'}</span>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name *</label>
@@ -1607,14 +1704,26 @@ function TunzAccessoriesSuite() {
                     </div>
 
                     <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-1 text-xs">
-                      <div className="flex justify-between font-extrabold text-sm text-[#162238]">
+                      {!isFlatTripService && (
+                        <div className="flex justify-between text-slate-600">
+                          <span>{selectedVehicle?.name} × {rentalDays} {rentalDays === 1 ? 'Day' : 'Days'}</span>
+                          <span>{formatPGK(baseCarCost)}</span>
+                        </div>
+                      )}
+                      {serviceExtraCost > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                          <span>{selectedCarService?.title} {isFlatTripService ? '(Flat Trip)' : `(${rentalDays}d)`}</span>
+                          <span>{formatPGK(serviceExtraCost)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-extrabold text-sm text-[#162238] pt-1 border-t border-slate-200">
                         <span>Estimated Total (GST Incl.)</span>
                         <span>{formatPGK(rentalTotal)}</span>
                       </div>
                     </div>
 
                     <button type="submit" className="w-full py-3 rounded-xl bg-[#9E2A2B] hover:bg-[#822021] text-white font-bold text-sm shadow transition">
-                      Submit {selectedCarService?.title}
+                      Submit {selectedCarService?.title} ({rentalDays} {isFlatTripService ? 'Trip' : rentalDays === 1 ? 'Day' : 'Days'})
                     </button>
                   </form>
                 </div>
@@ -1738,7 +1847,6 @@ function TunzAccessoriesSuite() {
             })}
           </div>
 
-          {/* Instant Receipt Generated Banner Right After Payment Verification */}
           {receiptBanner && (
             <div className="mb-6 bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-sm">
               <div className="flex items-center gap-3">
@@ -1803,7 +1911,6 @@ function TunzAccessoriesSuite() {
             </div>
           )}
 
-          {/* DEDICATED RECEIPT PORTAL FOR GENERATING & SENDING RECEIPTS TO CUSTOMERS */}
           {adminTab === 'receipts' && (
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1833,7 +1940,7 @@ function TunzAccessoriesSuite() {
                       <tr>
                         <th className="p-3">Receipt # / Division</th>
                         <th className="p-3">Customer & Contact</th>
-                        <th className="p-3">Item / Service</th>
+                        <th className="p-3">Item / Duration</th>
                         <th className="p-3">Amount Paid</th>
                         <th className="p-3">Dispatch Status</th>
                         <th className="p-3 text-right">Generate & Send</th>
@@ -1843,6 +1950,7 @@ function TunzAccessoriesSuite() {
                       {officialReceipts.map(rc => {
                         const custPhoneDigits = toDigitsPhone(rc.clientContact);
                         const shareText = buildCustomerShareText(rc);
+                        const { qtyVal, unitLabel } = getDocQtyAndLabel(rc);
                         return (
                           <tr key={rc.id}>
                             <td className="p-3">
@@ -1855,7 +1963,10 @@ function TunzAccessoriesSuite() {
                             </td>
                             <td className="p-3 text-xs">
                               <div className="font-semibold">{rc.itemSummary}</div>
-                              <div className="text-slate-500">{rc.paymentRef ? `Ref: ${rc.paymentRef}` : rc.notes}</div>
+                              <div className="text-slate-600 font-bold">
+                                {qtyVal} {unitLabel} @ {formatPGK(rc.unitRate)}
+                                {rc.division === 'Tunz Cars' && rc.startDate && ` (${rc.startDate} → ${rc.endDate})`}
+                              </div>
                             </td>
                             <td className="p-3 font-extrabold text-emerald-700">{formatPGK(rc.totalAmount)}</td>
                             <td className="p-3">
@@ -1924,59 +2035,69 @@ function TunzAccessoriesSuite() {
                       <tr>
                         <th className="p-3">Ref / Division</th>
                         <th className="p-3">Client / Organization</th>
-                        <th className="p-3">Service / Location</th>
+                        <th className="p-3">Service / Duration</th>
                         <th className="p-3">Total (GST Incl.)</th>
                         <th className="p-3">Status</th>
                         <th className="p-3">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {inquiries.map(inq => (
-                        <tr key={inq.id}>
-                          <td className="p-3">
-                            <div className="font-mono text-xs font-bold">{inq.id}</div>
-                            <span className="text-[11px] font-bold text-[#9A7B3E]">{inq.division}</span>
-                          </td>
-                          <td className="p-3">
-                            <div className="font-bold">{inq.clientName}</div>
-                            <div className="text-xs text-slate-500">{inq.organization} • {inq.phone}</div>
-                          </td>
-                          <td className="p-3 text-xs">
-                            <div className="font-bold">{inq.itemSummary} (×{inq.qty})</div>
-                            <div className="text-slate-500">{inq.details}</div>
-                          </td>
-                          <td className="p-3 font-extrabold">{formatPGK(inq.totalAmount)}</td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                              inq.status === 'Approved & Invoiced'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : inq.status === 'Declined / Cancelled'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}>{inq.status}</span>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {inq.status === 'Pending Approval' && (
-                                <>
-                                  <button onClick={() => approveInquiry(inq)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
-                                    Approve & Invoice
-                                  </button>
-                                  <button onClick={() => declineInquiry(inq)} className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">
-                                    Decline
-                                  </button>
-                                </>
+                      {inquiries.map(inq => {
+                        const isFlat = inq.pricingMode === 'flat_trip' || inq.unitLabel === 'Trip';
+                        const daysCount = inq.division === 'Tunz Cars' && !isFlat && inq.startDate && inq.endDate
+                          ? calcDaysInclusive(inq.startDate, inq.endDate)
+                          : Number(inq.qty || 1);
+                        const lbl = inq.unitLabel || (inq.division === 'Tunz Cars' ? (isFlat ? 'Trip' : (daysCount === 1 ? 'Day' : 'Days')) : 'Units');
+                        return (
+                          <tr key={inq.id}>
+                            <td className="p-3">
+                              <div className="font-mono text-xs font-bold">{inq.id}</div>
+                              <span className="text-[11px] font-bold text-[#9A7B3E]">{inq.division}</span>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold">{inq.clientName}</div>
+                              <div className="text-xs text-slate-500">{inq.organization} • {inq.phone}</div>
+                            </td>
+                            <td className="p-3 text-xs">
+                              <div className="font-bold">{inq.itemSummary} ({daysCount} {lbl})</div>
+                              {inq.division === 'Tunz Cars' && inq.startDate && (
+                                <div className="text-[#9E2A2B] font-semibold">Dates: {inq.startDate} to {inq.endDate}</div>
                               )}
-                              <button
-                                onClick={() => setDeleteConfirm({ col: 'inquiries', id: inq.id, name: `${inq.id} (${inq.clientName})` })}
-                                className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                              <div className="text-slate-500">{inq.details}</div>
+                            </td>
+                            <td className="p-3 font-extrabold">{formatPGK(inq.totalAmount)}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                inq.status === 'Approved & Invoiced'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : inq.status === 'Declined / Cancelled'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}>{inq.status}</span>
+                            </td>
+                            <td className="p-3">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {inq.status === 'Pending Approval' && (
+                                  <>
+                                    <button onClick={() => approveInquiry(inq)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+                                      Approve & Invoice
+                                    </button>
+                                    <button onClick={() => declineInquiry(inq)} className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">
+                                      Decline
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => setDeleteConfirm({ col: 'inquiries', id: inq.id, name: `${inq.id} (${inq.clientName})` })}
+                                  className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -2266,36 +2387,49 @@ function TunzAccessoriesSuite() {
                     <tr>
                       <th className="p-3">Doc # / Division</th>
                       <th className="p-3">Client</th>
-                      <th className="p-3">Description</th>
+                      <th className="p-3">Description & Days/Qty</th>
                       <th className="p-3">Total (PGK)</th>
                       <th className="p-3">Status</th>
                       <th className="p-3 text-right">A4 Print / Edit</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {documents.map(d => (
-                      <tr key={d.id}>
-                        <td className="p-3">
-                          <div className="font-mono text-xs font-bold">{d.id}</div>
-                          <span className="text-[11px] font-bold text-[#9A7B3E]">{d.division} • {d.type}</span>
-                        </td>
-                        <td className="p-3 font-bold">{d.clientName}</td>
-                        <td className="p-3 text-xs">{d.itemSummary}</td>
-                        <td className="p-3 font-extrabold">{formatPGK(d.totalAmount)}</td>
-                        <td className="p-3"><span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">{d.status}</span></td>
-                        <td className="p-3 text-right space-x-2">
-                          <button onClick={() => setPreviewDoc(d)} className="px-2.5 py-1.5 rounded bg-[#162238] text-white text-xs font-bold inline-flex items-center gap-1">
-                            <Printer className="w-3.5 h-3.5" /> A4 View
-                          </button>
-                          <button onClick={() => setDocModal({ open: true, data: d })} className="p-1.5 rounded bg-slate-100 text-slate-700">
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => setDeleteConfirm({ col: 'documents', id: d.id, name: d.id })} className="p-1.5 rounded bg-red-50 text-red-700">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {documents.map(d => {
+                      const { qtyVal, unitLabel } = getDocQtyAndLabel(d);
+                      return (
+                        <tr key={d.id}>
+                          <td className="p-3">
+                            <div className="font-mono text-xs font-bold">{d.id}</div>
+                            <span className="text-[11px] font-bold text-[#9A7B3E]">{d.division} • {d.type}</span>
+                          </td>
+                          <td className="p-3 font-bold">{d.clientName}</td>
+                          <td className="p-3 text-xs">
+                            <div className="font-semibold">{d.itemSummary}</div>
+                            <div className="text-slate-600 font-bold">
+                              {qtyVal} {unitLabel} @ {formatPGK(d.unitRate)}
+                              {d.division === 'Tunz Cars' && d.startDate && ` (${d.startDate} → ${d.endDate})`}
+                            </div>
+                          </td>
+                          <td className="p-3 font-extrabold">{formatPGK(d.totalAmount)}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                              d.status === 'Paid in Full' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>{d.status}</span>
+                          </td>
+                          <td className="p-3 text-right space-x-2">
+                            <button onClick={() => setPreviewDoc(d)} className="px-2.5 py-1.5 rounded bg-[#162238] text-white text-xs font-bold inline-flex items-center gap-1">
+                              <Printer className="w-3.5 h-3.5" /> A4 View
+                            </button>
+                            <button onClick={() => setDocModal({ open: true, data: d })} className="p-1.5 rounded bg-slate-100 text-slate-700">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setDeleteConfirm({ col: 'documents', id: d.id, name: d.id })} className="p-1.5 rounded bg-red-50 text-red-700">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2500,101 +2634,125 @@ function TunzAccessoriesSuite() {
       {payModal && <PaymentModal documents={documents} onClose={() => setPayModal(false)} onSave={logPayment} />}
       {expModal && <ExpenseModal onClose={() => setExpModal(false)} onSave={logExpense} />}
 
-      {previewDoc && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-xl max-w-3xl w-full p-8 shadow-2xl my-8">
-            <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-200 print:hidden">
-              <span className="text-xs font-bold uppercase text-slate-500">Corporate A4 Document Preview</span>
-              <div className="flex gap-2">
-                <button onClick={() => window.print()} className="px-4 py-1.5 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
-                  <Printer className="w-3.5 h-3.5" /> Print / Save PDF
-                </button>
-                <button onClick={() => setPreviewDoc(null)} className="p-1.5 rounded-lg bg-slate-100"><X className="w-4 h-4" /></button>
+      {/* CORPORATE A4 QUOTATION / PROFORMA INVOICE / OFFICIAL RECEIPT PREVIEW */}
+      {previewDoc && (() => {
+        const { qtyVal, unitLabel } = getDocQtyAndLabel(previewDoc);
+        const isCars = previewDoc.division === 'Tunz Cars';
+        return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <div className="bg-white rounded-xl max-w-3xl w-full p-8 shadow-2xl my-8">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-200 print:hidden">
+                <span className="text-xs font-bold uppercase text-slate-500">Corporate A4 {previewDoc.type} Preview</span>
+                <div className="flex gap-2">
+                  <button onClick={() => window.print()} className="px-4 py-1.5 rounded-lg bg-[#162238] text-white text-xs font-bold flex items-center gap-1.5">
+                    <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+                  </button>
+                  <button onClick={() => setPreviewDoc(null)} className="p-1.5 rounded-lg bg-slate-100"><X className="w-4 h-4" /></button>
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-6 text-slate-900">
-              <div className="flex justify-between items-start border-b-2 border-[#9E2A2B] pb-4 gap-4">
-                <div className="flex items-center gap-4">
-                  <img
-                    src={previewDoc.division === 'Tunz Cars' ? (settings.tcLogoUrl || DEFAULT_TC_LOGO) : (settings.taLogoUrl || DEFAULT_TA_LOGO)}
-                    alt="Brand Logo"
-                    className="h-20 w-auto object-contain shrink-0"
-                  />
-                  <div>
-                    <h2 className="text-2xl font-extrabold text-[#162238] uppercase">
-                      {previewDoc.division === 'Tunz Cars' ? 'TUNZ CARS' : settings.companyName}
-                    </h2>
-                    <p className="text-xs font-bold text-[#9A7B3E]">
-                      {previewDoc.division === 'Tunz Cars' ? `A Subsidiary of ${settings.companyName}` : `Operating Division: ${previewDoc.division}`}
-                    </p>
-                    <p className="text-xs text-slate-600 mt-1">Phone / WhatsApp: {settings.phoneDisplay} • Email: {settings.email}</p>
-                    <p className="text-xs text-slate-600">IPA Reg #: {settings.ipaNumber} • IRC TIN: {settings.tinNumber}</p>
+              <div className="space-y-6 text-slate-900">
+                <div className="flex justify-between items-start border-b-2 border-[#9E2A2B] pb-4 gap-4">
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={isCars ? (settings.tcLogoUrl || DEFAULT_TC_LOGO) : (settings.taLogoUrl || DEFAULT_TA_LOGO)}
+                      alt="Brand Logo"
+                      className="h-20 w-auto object-contain shrink-0"
+                    />
+                    <div>
+                      <h2 className="text-2xl font-extrabold text-[#162238] uppercase">
+                        {isCars ? 'TUNZ CARS' : settings.companyName}
+                      </h2>
+                      <p className="text-xs font-bold text-[#9A7B3E]">
+                        {isCars ? `A Subsidiary of ${settings.companyName}` : `Operating Division: ${previewDoc.division}`}
+                      </p>
+                      <p className="text-xs text-slate-600 mt-1">Phone / WhatsApp: {settings.phoneDisplay} • Email: {settings.email}</p>
+                      <p className="text-xs text-slate-600">IPA Reg #: {settings.ipaNumber} • IRC TIN: {settings.tinNumber}</p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <h3 className="text-xl font-extrabold uppercase text-[#162238]">{previewDoc.type}</h3>
+                    <p className="font-mono text-xs font-bold text-[#9E2A2B]">{previewDoc.id}</p>
+                    <p className="text-xs text-slate-600 mt-1">Date: {previewDoc.date}</p>
+                    <p className="text-xs font-bold text-emerald-700 mt-0.5">Status: {previewDoc.status}</p>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <h3 className="text-xl font-extrabold uppercase text-[#162238]">{previewDoc.type}</h3>
-                  <p className="font-mono text-xs font-bold text-[#9E2A2B]">{previewDoc.id}</p>
-                  <p className="text-xs text-slate-600 mt-1">Date: {previewDoc.date}</p>
-                </div>
-              </div>
 
-              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-xs space-y-1">
-                <p className="font-bold uppercase text-[#9A7B3E]">Client / Organization:</p>
-                <p className="text-sm font-bold">{previewDoc.clientName}</p>
-                <p className="text-slate-600">Contact: {previewDoc.clientContact}</p>
-              </div>
-
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-[#162238] text-white">
-                    <th className="p-2.5">Description</th>
-                    <th className="p-2.5 text-center">Qty ({previewDoc.unitLabel})</th>
-                    <th className="p-2.5 text-right">Unit Rate (PGK)</th>
-                    <th className="p-2.5 text-right">Total (PGK)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b border-slate-200">
-                    <td className="p-3">
-                      <div className="font-bold">{previewDoc.itemSummary}</div>
-                      <div className="text-slate-500">{previewDoc.notes}</div>
-                    </td>
-                    <td className="p-3 text-center font-bold">{previewDoc.qty}</td>
-                    <td className="p-3 text-right">{formatPGK(previewDoc.unitRate)}</td>
-                    <td className="p-3 text-right font-bold">{formatPGK(previewDoc.totalAmount)}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <div className="flex justify-between items-start gap-6">
-                <div className="bg-slate-50 p-3.5 rounded-lg border-l-4 border-[#9E2A2B] text-xs space-y-1 flex-1">
-                  <p className="font-bold text-[#9E2A2B]">OFFICIAL BANKING DETAILS</p>
-                  <p><strong>Account Name:</strong> {settings.accountName}</p>
-                  <p><strong>Bank & Acc #:</strong> {settings.bankName} — {settings.accountNumber}</p>
-                  {previewDoc.type === 'Official Receipt' && (
-                    <p className="pt-1 font-semibold text-slate-800">Amount in Words: {numberToWordsPGK(previewDoc.totalAmount)}</p>
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-xs flex flex-wrap justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="font-bold uppercase text-[#9A7B3E]">Client / Organization:</p>
+                    <p className="text-sm font-bold">{previewDoc.clientName}</p>
+                    <p className="text-slate-600">Contact: {previewDoc.clientContact}</p>
+                  </div>
+                  {isCars && previewDoc.startDate && (
+                    <div className="space-y-1 text-right">
+                      <p className="font-bold uppercase text-[#9A7B3E]">Hire / Service Period:</p>
+                      <p className="text-sm font-bold text-[#162238]">
+                        {previewDoc.startDate} to {previewDoc.endDate || previewDoc.startDate}
+                      </p>
+                      <p className="text-xs font-extrabold text-[#9E2A2B]">
+                        Duration: {qtyVal} {unitLabel}
+                      </p>
+                    </div>
                   )}
                 </div>
-                <div className="w-60 text-xs space-y-1.5">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Subtotal (Excl. GST):</span>
-                    <span>{formatPGK(previewDoc.totalAmount / 1.1)}</span>
+
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#162238] text-white">
+                      <th className="p-2.5">Description</th>
+                      <th className="p-2.5 text-center">Duration / Qty ({unitLabel})</th>
+                      <th className="p-2.5 text-right">Rate per {qtyVal === 1 && unitLabel === 'Days' ? 'Day' : unitLabel.replace(/s$/, '')} (PGK)</th>
+                      <th className="p-2.5 text-right">Total (PGK)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-3">
+                        <div className="font-bold">{previewDoc.itemSummary}</div>
+                        {isCars && previewDoc.startDate && (
+                          <div className="text-slate-700 font-semibold mt-0.5">
+                            Schedule: {previewDoc.startDate} to {previewDoc.endDate || previewDoc.startDate} ({qtyVal} {unitLabel})
+                          </div>
+                        )}
+                        <div className="text-slate-500 mt-0.5">{previewDoc.notes}</div>
+                      </td>
+                      <td className="p-3 text-center font-extrabold text-sm">{qtyVal} {unitLabel}</td>
+                      <td className="p-3 text-right">{formatPGK(previewDoc.unitRate)}</td>
+                      <td className="p-3 text-right font-bold">{formatPGK(previewDoc.totalAmount)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="flex justify-between items-start gap-6">
+                  <div className="bg-slate-50 p-3.5 rounded-lg border-l-4 border-[#9E2A2B] text-xs space-y-1 flex-1">
+                    <p className="font-bold text-[#9E2A2B]">OFFICIAL BANKING DETAILS</p>
+                    <p><strong>Account Name:</strong> {settings.accountName}</p>
+                    <p><strong>Bank & Acc #:</strong> {settings.bankName} — {settings.accountNumber}</p>
+                    {previewDoc.type === 'Official Receipt' && (
+                      <p className="pt-1 font-semibold text-slate-800">Amount in Words: {numberToWordsPGK(previewDoc.totalAmount)}</p>
+                    )}
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">PNG GST (10%):</span>
-                    <span>{formatPGK(previewDoc.totalAmount - previewDoc.totalAmount / 1.1)}</span>
-                  </div>
-                  <div className="flex justify-between font-extrabold text-sm bg-[#162238] text-white p-2 rounded">
-                    <span>TOTAL (PGK):</span>
-                    <span>{formatPGK(previewDoc.totalAmount)}</span>
+                  <div className="w-60 text-xs space-y-1.5">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Subtotal (Excl. GST):</span>
+                      <span>{formatPGK(previewDoc.totalAmount / 1.1)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">PNG GST (10%):</span>
+                      <span>{formatPGK(previewDoc.totalAmount - previewDoc.totalAmount / 1.1)}</span>
+                    </div>
+                    <div className="flex justify-between font-extrabold text-sm bg-[#162238] text-white p-2 rounded">
+                      <span>TOTAL (PGK):</span>
+                      <span>{formatPGK(previewDoc.totalAmount)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -2931,32 +3089,51 @@ function CatalogModal({ initial, onClose, onSave }) {
   );
 }
 
+// Updated DocumentModal with Start Date, Return Date, Auto-Calculated Days & Total Preview
 function DocumentModal({ initial, vehicles, onClose, onSave }) {
-  const [form, setForm] = useState(
-    initial || {
-      division: 'Tunz Cars',
-      type: 'Quotation',
-      status: 'Sent',
-      date: new Date().toISOString().slice(0, 10),
-      clientName: '',
-      clientContact: '',
-      itemSummary: vehicles[0]?.name || '',
-      startDate: new Date().toISOString().slice(0, 10),
-      endDate: new Date().toISOString().slice(0, 10),
-      qty: 1,
-      unitLabel: 'Days',
-      unitRate: vehicles[0]?.dailyRate || 250,
-      notes: '10% PNG GST Inclusive'
-    }
-  );
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    division: 'Tunz Cars',
+    type: 'Quotation',
+    status: 'Sent',
+    date: today,
+    clientName: '',
+    clientContact: '',
+    itemSummary: vehicles[0]?.name || '',
+    startDate: today,
+    endDate: today,
+    qty: 1,
+    unitLabel: 'Days',
+    unitRate: vehicles[0]?.dailyRate || 250,
+    notes: '10% PNG GST Inclusive',
+    ...(initial || {})
+  });
+
+  const isCars = form.division === 'Tunz Cars';
+  const isTrip = form.unitLabel === 'Trip';
+  const computedQty = (isCars && !isTrip && form.startDate && form.endDate)
+    ? calcDaysInclusive(form.startDate, form.endDate)
+    : Math.max(1, Number(form.qty || 1));
+  const computedTotal = computedQty * Number(form.unitRate || 0);
+
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl">
-        <h3 className="text-lg font-bold text-[#162238]">{initial ? 'Edit Document' : 'Create Group Quote / Invoice / Receipt'}</h3>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <form onSubmit={(e) => { e.preventDefault(); onSave({ ...form, qty: computedQty }); }} className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-3 shadow-xl my-8">
+        <h3 className="text-lg font-bold text-[#162238]">
+          {initial?.id ? `Edit ${form.type}` : `Create ${form.type}`}
+        </h3>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Division</label>
-            <select value={form.division} onChange={e => setForm({ ...form, division: e.target.value, unitLabel: e.target.value === 'Tunz Cars' ? 'Days' : 'Units' })} className="w-full border rounded-lg px-2 py-2 text-xs">
+            <select
+              value={form.division}
+              onChange={e => setForm({
+                ...form,
+                division: e.target.value,
+                unitLabel: e.target.value === 'Tunz Cars' ? 'Days' : 'Units'
+              })}
+              className="w-full border rounded-lg px-2 py-2 text-xs"
+            >
               <option>Tunz Cars</option>
               <option>Tunz Organics</option>
               <option>Tech & Merch</option>
@@ -2964,44 +3141,106 @@ function DocumentModal({ initial, vehicles, onClose, onSave }) {
           </div>
           <div>
             <label className="block text-xs font-semibold mb-1">Doc Type</label>
-            <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-full border rounded-lg px-2 py-2 text-xs">
+            <select
+              value={form.type}
+              onChange={e => setForm({
+                ...form,
+                type: e.target.value,
+                status: e.target.value === 'Official Receipt' ? 'Paid in Full' : form.status
+              })}
+              className="w-full border rounded-lg px-2 py-2 text-xs"
+            >
               <option>Quotation</option>
               <option>Proforma Invoice</option>
               <option>Official Receipt</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold mb-1">Date</label>
+            <label className="block text-xs font-semibold mb-1">Issue Date</label>
             <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="w-full border rounded-lg px-2 py-2 text-xs" />
           </div>
         </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1">Client / Organization *</label>
             <input required value={form.clientName} onChange={e => setForm({ ...form, clientName: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="block text-xs font-semibold mb-1">Contact</label>
+            <label className="block text-xs font-semibold mb-1">Phone / Contact</label>
             <input value={form.clientContact} onChange={e => setForm({ ...form, clientContact: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
         </div>
+
         <div>
-          <label className="block text-xs font-semibold mb-1">Description *</label>
+          <label className="block text-xs font-semibold mb-1">Vehicle / Item Description *</label>
           <input required value={form.itemSummary} onChange={e => setForm({ ...form, itemSummary: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
         </div>
+
+        {isCars && (
+          <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Start Date *</label>
+              <input
+                type="date"
+                required
+                value={form.startDate || today}
+                onChange={e => {
+                  const s = e.target.value;
+                  setForm(prev => ({ ...prev, startDate: s, endDate: (prev.endDate || s) < s ? s : prev.endDate }));
+                }}
+                className="w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Return Date *</label>
+              <input
+                type="date"
+                required
+                min={form.startDate || today}
+                value={form.endDate || form.startDate || today}
+                onChange={e => setForm({ ...form, endDate: e.target.value })}
+                className="w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white"
+              />
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold mb-1">Qty / Days</label>
-            <input type="number" value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+            <label className="block text-xs font-semibold mb-1">
+              {isCars ? 'Calculated Days' : 'Quantity (Units)'}
+            </label>
+            <input
+              type="number"
+              min="1"
+              readOnly={isCars && !isTrip}
+              value={computedQty}
+              onChange={e => setForm({ ...form, qty: e.target.value })}
+              className={`w-full border rounded-lg px-3 py-2 text-sm font-bold ${isCars && !isTrip ? 'bg-slate-100 text-slate-700' : ''}`}
+            />
           </div>
           <div>
-            <label className="block text-xs font-semibold mb-1">Unit Rate (PGK)</label>
-            <input type="number" value={form.unitRate} onChange={e => setForm({ ...form, unitRate: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+            <label className="block text-xs font-semibold mb-1">
+              {isCars ? 'Daily Rate (PGK)' : 'Unit Rate (PGK)'}
+            </label>
+            <input type="number" required value={form.unitRate} onChange={e => setForm({ ...form, unitRate: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
           </div>
         </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1">Notes / Reference</label>
+          <input value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+
+        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-between items-center text-xs font-extrabold text-[#162238]">
+          <span>Total ({computedQty} {isCars ? (computedQty === 1 ? 'Day' : 'Days') : 'Units'} × {formatPGK(form.unitRate)}):</span>
+          <span className="text-sm text-[#9E2A2B]">{formatPGK(computedTotal)}</span>
+        </div>
+
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
-          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9E2A2B] text-white text-xs font-bold">Save Document</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg bg-[#9E2A2B] text-white text-xs font-bold">Save {form.type}</button>
         </div>
       </form>
     </div>
@@ -3015,8 +3254,21 @@ function PaymentModal({ documents, onClose, onSave }) {
       <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="bg-white rounded-2xl p-6 max-w-md w-full space-y-3 shadow-xl">
         <h3 className="text-lg font-bold text-[#162238]">Record Group Payment</h3>
         <div>
-          <label className="block text-xs font-semibold mb-1">Amount (PGK) *</label>
-          <input type="number" required value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+          <label className="block text-xs font-semibold mb-1">Linked Invoice / Quote</label>
+          <select value={form.docId} onChange={e => setForm({ ...form, docId: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="">-- Direct Deposit --</option>
+            {documents.map(d => <option key={d.id} value={d.id}>{d.id} ({d.division}) — {d.clientName}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Amount (PGK) *</label>
+            <input type="number" required value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Date</label>
+            <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
         </div>
         <div>
           <label className="block text-xs font-semibold mb-1">Reference #</label>
