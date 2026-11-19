@@ -23,9 +23,23 @@ const YOUR_FIREBASE_CONFIG_HERE = {
   appId: "1:733661606615:web:6d8fc8d47d477f565557692"
 };
 
-// Default Fallback Logos (also editable live in Admin Settings!)
-const DEFAULT_TA_LOGO = '/ta-logo.png';
-const DEFAULT_TC_LOGO = '/tc-logo.jpg';
+// Clean Built-In Vector Badges (Zero 404s; replaceable live in Admin Settings!)
+const DEFAULT_TA_LOGO = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'><rect width='120' height='120' rx='24' fill='%23162238'/><circle cx='60' cy='60' r='48' fill='none' stroke='%239A7B3E' stroke-width='4'/><text x='60' y='72' font-family='Arial,sans-serif' font-weight='900' font-size='44' fill='%23E5C98B' text-anchor='middle'>TA</text></svg>";
+const DEFAULT_TC_LOGO = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'><rect width='120' height='120' rx='24' fill='%23162238'/><circle cx='60' cy='60' r='48' fill='none' stroke='%239E2A2B' stroke-width='5'/><text x='60' y='72' font-family='Arial,sans-serif' font-weight='900' font-size='44' fill='%23FFFFFF' text-anchor='middle'>TC</text></svg>";
+
+// Initialize Firebase Safely
+let app = null;
+let auth = null;
+let db = null;
+try {
+  app = initializeApp(YOUR_FIREBASE_CONFIG_HERE);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (initErr) {
+  console.error('Firebase initialization warning:', initErr);
+}
+
+const APP_ID = 'tunz-accessories-group-prod';
 
 // Papua New Guinea 4 Regions & Current Towns
 const PNG_REGIONS_AND_TOWNS = {
@@ -75,7 +89,7 @@ const DEFAULT_SETTINGS = {
   tagline: 'Papua New Guinea Commercial Enterprise',
   heroDescription: 'Select a division below to access vehicle hire, chauffeur & parcel delivery services, organic coconut oil products, IT & custom merchandise, or our online payment portal.',
   phoneDisplay: '+675 7962 5068',
-  whatsappNumber: '67579625068', // Digits only for wa.me links
+  whatsappNumber: '67579625068',
   email: 'tuneabel@gmail.com',
   ipaNumber: '6-136546287',
   tinNumber: '501982530',
@@ -142,8 +156,8 @@ const INITIAL_CAR_SERVICES = [
   {
     id: 'TC-SRV-01',
     title: 'Vehicle Hire (Self-Drive)',
-    pricingMode: 'per_day', // 'per_day' | 'flat_trip'
-    rate: 0, // Added on top of vehicle daily rate
+    pricingMode: 'per_day',
+    rate: 0,
     badge: 'Daily Rate',
     description: 'Daily self-drive rental across town & highway (Vehicle daily rate applies)',
     requiresLicense: true,
@@ -153,7 +167,7 @@ const INITIAL_CAR_SERVICES = [
     id: 'TC-SRV-02',
     title: 'Chauffeur Service',
     pricingMode: 'per_day',
-    rate: 50, // +K50/day on top of vehicle daily rate
+    rate: 50,
     badge: 'Driver Included',
     description: 'Dedicated professional PNG driver (+K50/day chauffeur allowance)',
     requiresLicense: false,
@@ -163,7 +177,7 @@ const INITIAL_CAR_SERVICES = [
     id: 'TC-SRV-03',
     title: 'Parcel Pick up & Delivery',
     pricingMode: 'flat_trip',
-    rate: 65, // Flat trip rate
+    rate: 65,
     badge: 'Point-to-Point',
     description: 'Same-day courier & cargo drop-off across town & nearby centres',
     requiresLicense: false,
@@ -301,7 +315,6 @@ function TunzAccessoriesSuite() {
   const [copiedAcc, setCopiedAcc] = useState(false);
   const [settingsSavedBanner, setSettingsSavedBanner] = useState(false);
 
-  // Live Cloud-Synced State (Fully Editable Inside Admin!)
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [vehicles, setVehicles] = useState(INITIAL_FLEET);
   const [carServices, setCarServices] = useState(INITIAL_CAR_SERVICES);
@@ -312,7 +325,6 @@ function TunzAccessoriesSuite() {
   const [paymentSubmissions, setPaymentSubmissions] = useState([]);
   const [expenses, setExpenses] = useState([]);
 
-  // Admin Navigation & Modals
   const [adminTab, setAdminTab] = useState('overview');
   const [vehModal, setVehModal] = useState({ open: false, data: null });
   const [srvModal, setSrvModal] = useState({ open: false, data: null });
@@ -324,7 +336,6 @@ function TunzAccessoriesSuite() {
   const [expModal, setExpModal] = useState(false);
   const [proofViewer, setProofViewer] = useState(null);
 
-  // Public Car Booking Filters & Form
   const [filterRegion, setFilterRegion] = useState('All');
   const [filterTown, setFilterTown] = useState('All');
   const [gpsStatus, setGpsStatus] = useState('');
@@ -370,16 +381,17 @@ function TunzAccessoriesSuite() {
   const [submitSuccess, setSubmitSuccess] = useState(null);
 
   useEffect(() => {
+    if (!auth) return;
     signInAnonymously(auth).catch((err) => console.error('Auth error:', err));
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
     const base = ['artifacts', APP_ID, 'public', 'data'];
-
     const safeMap = (s) => s.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
+
     const u0 = onSnapshot(doc(db, ...base, 'config', 'site_settings'), (snap) => {
       if (snap.exists() && snap.data()) {
         setSettings(prev => ({ ...prev, ...snap.data() }));
@@ -414,14 +426,14 @@ function TunzAccessoriesSuite() {
   }, [user]);
 
   const saveCloud = async (col, id, payload) => {
-    if (!user) return;
+    if (!user || !db) return;
     try {
       await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', col, id), payload, { merge: true });
     } catch (e) { console.error(e); }
   };
 
   const deleteCloud = async (col, id) => {
-    if (!user) return;
+    if (!user || !db) return;
     try {
       await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', col, id));
     } catch (e) { console.error(e); }
@@ -433,14 +445,12 @@ function TunzAccessoriesSuite() {
     return diff > 0 ? diff : 1;
   };
 
-  // Active Car Services & Selected Service
   const activeCarServices = useMemo(() => carServices.filter(s => s.active !== false), [carServices]);
   const selectedCarService = useMemo(
     () => activeCarServices.find(s => s.id === carForm.serviceId) || activeCarServices[0] || INITIAL_CAR_SERVICES[0],
     [activeCarServices, carForm.serviceId]
   );
 
-  // Filtered Public Fleet by PNG Region & Town
   const publicVehicles = useMemo(() => {
     return vehicles.filter(v => {
       if (v.status === 'Inactive') return false;
@@ -474,7 +484,6 @@ function TunzAccessoriesSuite() {
   const baseCarCost = isFlatTripService ? 0 : (selectedVehicle?.dailyRate || 250) * rentalDays;
   const rentalTotal = baseCarCost + serviceExtraCost;
 
-  // Google Maps Embed & Direct Pin URL
   const mapQueryLocation = useMemo(() => {
     const q = carForm.pickupAddress?.trim() || `${selectedVehicle?.town || 'Kavieng'}, Papua New Guinea`;
     return encodeURIComponent(q.includes('Papua New Guinea') ? q : `${q}, Papua New Guinea`);
@@ -723,7 +732,6 @@ function TunzAccessoriesSuite() {
     await saveCloud('payment_submissions', sub.id, updated);
   };
 
-  // Save Site & WhatsApp Settings Live
   const handleSaveSettings = async (e) => {
     e.preventDefault();
     const cleanedWa = String(settings.whatsappNumber || '').replace(/[^0-9]/g, '');
@@ -852,15 +860,14 @@ function TunzAccessoriesSuite() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* GROUP HEADER */}
       <header className="bg-[#162238] text-white border-b-4 border-[#9A7B3E] sticky top-0 z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3.5">
-            <div className="bg-white rounded-xl p-1.5 shadow-md flex items-center justify-center shrink-0">
+            <div className="bg-white rounded-xl p-1 shadow-md flex items-center justify-center shrink-0">
               <img
                 src={settings.taLogoUrl || DEFAULT_TA_LOGO}
                 alt="Tunz Accessories Logo"
-                className="h-11 w-auto object-contain"
+                className="h-11 w-11 rounded-lg object-contain"
               />
             </div>
             <div>
@@ -904,10 +911,8 @@ function TunzAccessoriesSuite() {
         </div>
       </header>
 
-      {/* PUBLIC CLIENT PORTAL */}
       {mode === 'public' && (
         <main className="max-w-6xl mx-auto px-4 py-8">
-          {/* LANDING HERO WITH ONLY TUNZ ACCESSORIES AS MAIN TITLE */}
           <div className="bg-gradient-to-r from-[#162238] via-[#1f304f] to-[#162238] text-white rounded-2xl p-6 md:p-8 mb-6 shadow-lg border border-[#9A7B3E]/30 flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="max-w-2xl">
               <span className="inline-block text-xs font-bold uppercase tracking-widest text-[#E5C98B] mb-1.5">
@@ -932,16 +937,15 @@ function TunzAccessoriesSuite() {
                 <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-[#E5C98B]" /> NGI • Southern • Momase • Highlands</span>
               </div>
             </div>
-            <div className="bg-white rounded-2xl p-4 shadow-xl border-2 border-[#9A7B3E] shrink-0">
+            <div className="bg-white rounded-2xl p-3 shadow-xl border-2 border-[#9A7B3E] shrink-0">
               <img
                 src={settings.taLogoUrl || DEFAULT_TA_LOGO}
                 alt="Tunz Accessories Official Brand"
-                className="h-24 md:h-28 w-auto object-contain"
+                className="h-24 w-24 md:h-28 md:w-28 rounded-xl object-contain"
               />
             </div>
           </div>
 
-          {/* 4-Card Division Switcher */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
             <button
               onClick={() => { setPublicTab('cars'); setSubmitSuccess(null); }}
@@ -1287,7 +1291,6 @@ function TunzAccessoriesSuite() {
               </div>
             </div>
           ) : publicTab === 'cars' ? (
-            /* TUNZ CARS PUBLIC PORTAL: DYNAMIC SERVICES + PNG REGION/TOWN + GOOGLE MAPS */
             <div className="space-y-6">
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -1304,7 +1307,6 @@ function TunzAccessoriesSuite() {
                 </div>
               </div>
 
-              {/* Dynamic Service Mode Selector (Managed by Admin!) */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {activeCarServices.map((srv) => {
                   const active = selectedCarService?.id === srv.id;
@@ -1330,7 +1332,6 @@ function TunzAccessoriesSuite() {
                 })}
               </div>
 
-              {/* PNG Region & Town Filter Bar */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#162238]">
                   <MapPin className="w-4 h-4 text-[#9E2A2B]" /> Filter Fleet by PNG Location:
@@ -1361,7 +1362,6 @@ function TunzAccessoriesSuite() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left 2 Columns: Fleet Cards + Google Maps */}
                 <div className="lg:col-span-2 space-y-6">
                   <div className="space-y-3">
                     <h3 className="text-lg font-bold text-[#162238]">1. Select Fleet Vehicle ({publicVehicles.length} Available)</h3>
@@ -1410,7 +1410,6 @@ function TunzAccessoriesSuite() {
                     )}
                   </div>
 
-                  {/* GOOGLE MAPS INTERACTIVE LOCATION & ROUTE PREVIEW */}
                   <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
@@ -1451,7 +1450,6 @@ function TunzAccessoriesSuite() {
                   </div>
                 </div>
 
-                {/* Right Column: Service Reservation Form */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
                   <h3 className="text-lg font-bold text-[#162238] mb-1">2. {selectedCarService?.title}</h3>
                   <p className="text-xs text-slate-500 mb-4">Base Location: {selectedVehicle?.town || 'Kavieng'}, {selectedVehicle?.region || 'NGI'}</p>
@@ -1572,7 +1570,6 @@ function TunzAccessoriesSuite() {
               </div>
             </div>
           ) : (
-            /* TUNZ ORGANICS & TECH/MERCH PUBLIC STOREFRONT (PRODUCTS & SERVICES) */
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-4">
                 <h3 className="text-lg font-bold text-[#162238]">
@@ -1662,7 +1659,6 @@ function TunzAccessoriesSuite() {
         </main>
       )}
 
-      {/* OWNER ADMIN COMMAND CENTER */}
       {mode === 'admin' && (
         <main className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-3">
@@ -1956,10 +1952,8 @@ function TunzAccessoriesSuite() {
             </div>
           )}
 
-          {/* 4. TUNZ CARS FLEET & ADDITIONAL SERVICES CRUD */}
           {adminTab === 'cars' && (
             <div className="space-y-6">
-              {/* Fleet Registry */}
               <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-3">
@@ -2012,7 +2006,6 @@ function TunzAccessoriesSuite() {
                 </div>
               </div>
 
-              {/* Dynamic Tunz Cars Additional Services Manager */}
               <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
                   <div>
@@ -2061,7 +2054,6 @@ function TunzAccessoriesSuite() {
             </div>
           )}
 
-          {/* 5. ORGANICS & TECH CATALOG (PRODUCTS & SERVICES CRUD) */}
           {adminTab === 'catalog' && (
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
               <div className="flex justify-between items-center mb-4">
@@ -2261,7 +2253,6 @@ function TunzAccessoriesSuite() {
             </div>
           )}
 
-          {/* 9. SITE, WHATSAPP, LOGOS & BANKING LIVE SETTINGS */}
           {adminTab === 'settings' && (
             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm max-w-4xl">
               <div className="mb-6">
@@ -2276,7 +2267,6 @@ function TunzAccessoriesSuite() {
               )}
 
               <form onSubmit={handleSaveSettings} className="space-y-6">
-                {/* Official Contact & WhatsApp */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <h4 className="font-bold text-sm text-[#162238]">1. Official WhatsApp & Business Contact</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2315,7 +2305,6 @@ function TunzAccessoriesSuite() {
                   </div>
                 </div>
 
-                {/* Holding Branding & Security */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <h4 className="font-bold text-sm text-[#162238]">2. Holding Title, Registrations & Owner PIN</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -2367,7 +2356,6 @@ function TunzAccessoriesSuite() {
                   </div>
                 </div>
 
-                {/* Banking Details */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <h4 className="font-bold text-sm text-[#162238]">3. Settlement Bank Account (Shown on Payment Portal & Invoices)</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2401,7 +2389,6 @@ function TunzAccessoriesSuite() {
                   </div>
                 </div>
 
-                {/* Direct Logo Uploaders (No GitHub upload needed!) */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <h4 className="font-bold text-sm text-[#162238]">4. Direct Logo Upload (Instant Cloud Sync)</h4>
                   <p className="text-xs text-slate-500">Upload your Tunz Accessories and Tunz Cars logos straight from your computer here.</p>
@@ -2564,7 +2551,6 @@ function TunzAccessoriesSuite() {
         <ExpenseModal onClose={() => setExpModal(false)} onSave={logExpense} />
       )}
 
-      {/* A4 CORPORATE DOCUMENT PREVIEW */}
       {previewDoc && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl max-w-3xl w-full p-8 shadow-2xl my-8">
