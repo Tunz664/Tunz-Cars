@@ -3,7 +3,7 @@ import {
   Car, Calendar, FileText, CreditCard, Fuel, Printer, Download,
   Lock, Unlock, Phone, Mail, MapPin, TrendingUp, X, Eye, Send,
   Sparkles, Package, Laptop, Upload, Copy, Navigation, ExternalLink,
-  Settings, ChevronLeft, ChevronRight, Camera, Edit2, Trash2, Plus, CheckCircle, Receipt
+  Settings, ChevronLeft, ChevronRight, Camera, Edit2, Trash2, Plus, CheckCircle, Receipt, BarChart3
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -288,6 +288,19 @@ const compressImageFile = (file, maxW = 720, quality = 0.72) => new Promise((res
 
 const toDigitsPhone = (raw) => String(raw || '').replace(/[^0-9]/g, '');
 
+// Compute Sunday-to-Saturday week window for a given ISO date string (YYYY-MM-DD)
+const getWeekWindow = (dateStr) => {
+  const base = new Date((dateStr || new Date().toISOString().slice(0, 10)) + 'T00:00:00');
+  if (isNaN(base.getTime())) return { start: '', end: '', label: '' };
+  const day = base.getDay(); // 0 = Sun
+  const start = new Date(base);
+  start.setDate(base.getDate() - day);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  return { start: fmt(start), end: fmt(end), label: `${fmt(start)} to ${fmt(end)}` };
+};
+
 function ItemPhotoGallery({ images = [], alt = 'Photo', badge = null, onOpenLightbox = null }) {
   const validImages = Array.isArray(images) ? images.filter(Boolean) : [];
   const [idx, setIdx] = useState(0);
@@ -361,6 +374,12 @@ function TunzAccessoriesSuite() {
   const [payments, setPayments] = useState([]);
   const [paymentSubmissions, setPaymentSubmissions] = useState([]);
   const [expenses, setExpenses] = useState([]);
+
+  // Financial & Tax Portal Controls
+  const [reportSubTab, setReportSubTab] = useState('weekly'); // 'weekly' | 'balance_sheet' | 'tax_return'
+  const [reportWeekDate, setReportWeekDate] = useState(new Date().toISOString().slice(0, 10));
+  const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [reportTaxYear, setReportTaxYear] = useState(new Date().toISOString().slice(0, 4)); // YYYY
 
   const [receiptLookupInput, setReceiptLookupInput] = useState('');
 
@@ -700,7 +719,7 @@ function TunzAccessoriesSuite() {
     });
   };
 
-  // Auto-Generate Official Receipt preserving exact Days, Start/End Dates, and Daily Rate!
+  // Auto-Generate Official Receipt linked directly to income revenue
   const verifyPaymentSubmission = async (sub) => {
     const receiptNum = `TA-RCT-2026-${String(documents.length + 1).padStart(3, '0')}`;
     const updatedSub = { ...sub, status: 'Verified & Receipted', generatedReceiptId: receiptNum };
@@ -711,27 +730,12 @@ function TunzAccessoriesSuite() {
     const matchedDoc = documents.find(d => d.id.toUpperCase() === refKey);
     const matchedInquiry = inquiries.find(inq => inq.id.toUpperCase() === refKey);
 
-    const payId = `TA-PAY-${String(payments.length + 1).padStart(3, '0')}`;
-    const payRec = {
-      id: payId,
-      docId: matchedDoc ? matchedDoc.id : receiptNum,
-      date: sub.paymentDate,
-      amount: Number(sub.amountPaid || 0),
-      method: sub.method,
-      reference: `${sub.bankReference} (Verified from ${sub.payerName})`,
-      receiptImage: sub.receiptImage || ''
-    };
-    setPayments(prev => [payRec, ...prev]);
-    await saveCloud('payments', payId, payRec);
-
     let generatedReceiptObj = null;
 
     if (matchedDoc) {
       const newPaid = Number(matchedDoc.paidAmount || 0) + Number(sub.amountPaid || 0);
       const full = newPaid >= matchedDoc.totalAmount;
-      const resolvedQty = matchedDoc.division === 'Tunz Cars' && matchedDoc.startDate && matchedDoc.endDate && matchedDoc.unitLabel !== 'Trip'
-        ? calcDaysInclusive(matchedDoc.startDate, matchedDoc.endDate)
-        : Number(matchedDoc.qty || 1);
+      const resolvedQty = Math.max(1, Number(matchedDoc.qty || 1));
       generatedReceiptObj = {
         ...matchedDoc,
         qty: resolvedQty,
@@ -746,11 +750,7 @@ function TunzAccessoriesSuite() {
       setDocuments(prev => prev.map(d => d.id === matchedDoc.id ? generatedReceiptObj : d));
       await saveCloud('documents', matchedDoc.id, generatedReceiptObj);
     } else {
-      const resolvedQty = matchedInquiry
-        ? (matchedInquiry.division === 'Tunz Cars' && matchedInquiry.startDate && matchedInquiry.endDate && matchedInquiry.pricingMode !== 'flat_trip'
-            ? calcDaysInclusive(matchedInquiry.startDate, matchedInquiry.endDate)
-            : Number(matchedInquiry.qty || 1))
-        : 1;
+      const resolvedQty = matchedInquiry ? Math.max(1, Number(matchedInquiry.qty || 1)) : 1;
       const resolvedUnitRate = matchedInquiry?.unitRate
         ? Number(matchedInquiry.unitRate)
         : Number(sub.amountPaid || 0) / resolvedQty;
@@ -787,6 +787,19 @@ function TunzAccessoriesSuite() {
       setDocuments(prev => [generatedReceiptObj, ...prev]);
       await saveCloud('documents', receiptNum, generatedReceiptObj);
     }
+
+    const payId = `TA-PAY-${String(payments.length + 1).padStart(3, '0')}`;
+    const payRec = {
+      id: payId,
+      docId: generatedReceiptObj.id,
+      date: sub.paymentDate,
+      amount: Number(sub.amountPaid || 0),
+      method: sub.method,
+      reference: `${sub.bankReference} (Verified from ${sub.payerName})`,
+      receiptImage: sub.receiptImage || ''
+    };
+    setPayments(prev => [payRec, ...prev]);
+    await saveCloud('payments', payId, payRec);
 
     if (matchedInquiry) {
       const updInq = { ...matchedInquiry, status: 'Approved & Invoiced', receiptId: generatedReceiptObj.id };
@@ -825,9 +838,7 @@ function TunzAccessoriesSuite() {
     await saveCloud('inquiries', inq.id, updated);
 
     const isFlat = inq.pricingMode === 'flat_trip' || inq.unitLabel === 'Trip';
-    const resolvedDays = inq.division === 'Tunz Cars' && !isFlat && inq.startDate && inq.endDate
-      ? calcDaysInclusive(inq.startDate, inq.endDate)
-      : Number(inq.qty || 1);
+    const resolvedDays = Math.max(1, Number(inq.qty || 1));
     const resolvedUnitLabel = inq.division === 'Tunz Cars'
       ? (isFlat ? 'Trip' : (resolvedDays === 1 ? 'Day' : 'Days'))
       : 'Units';
@@ -982,13 +993,122 @@ function TunzAccessoriesSuite() {
     setExpModal(false);
   };
 
+  // Unified Receipt & Payment Income Engine:
+  // Any Official Receipt or Paid-in-Full document counts toward realized receipt income,
+  // plus any manual payment entry whose docId is not already an Official Receipt.
+  const receiptIncomeEntries = useMemo(() => {
+    const receiptDocs = documents.filter(d => d.type === 'Official Receipt' || d.status === 'Paid in Full');
+    const receiptDocIds = new Set(receiptDocs.map(d => d.id));
+
+    const fromReceipts = receiptDocs.map(d => {
+      const amt = Number(d.paidAmount || d.totalAmount || 0);
+      return {
+        id: d.id,
+        date: d.date || new Date().toISOString().slice(0, 10),
+        division: d.division || 'Tunz Cars',
+        clientName: d.clientName || 'Customer',
+        itemSummary: d.itemSummary || d.id,
+        source: `Receipt (${d.id})`,
+        amount: amt
+      };
+    });
+
+    const extraPayments = payments
+      .filter(p => !p.docId || !receiptDocIds.has(p.docId))
+      .map(p => ({
+        id: p.id,
+        date: p.date || new Date().toISOString().slice(0, 10),
+        division: 'Group Ledger',
+        clientName: p.reference || 'Bank Payment',
+        itemSummary: p.method || 'Bank Transfer',
+        source: `Payment (${p.id})`,
+        amount: Number(p.amount || 0)
+      }));
+
+    return [...fromReceipts, ...extraPayments];
+  }, [documents, payments]);
+
   const metrics = useMemo(() => {
-    const collected = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const collected = receiptIncomeEntries.reduce((s, r) => s + Number(r.amount || 0), 0);
     const billed = documents.filter(d => d.type !== 'Quotation').reduce((s, d) => s + Number(d.totalAmount || 0), 0);
     const gst = collected - collected / 1.1;
     const exp = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
     return { collected, receivables: Math.max(0, billed - collected), gst, exp, net: collected - exp };
-  }, [payments, documents, expenses]);
+  }, [receiptIncomeEntries, documents, expenses]);
+
+  // Period-specific reports for Administrator Financial & Tax Portal
+  const weeklyReport = useMemo(() => {
+    const win = getWeekWindow(reportWeekDate);
+    const weekIncome = receiptIncomeEntries.filter(r => r.date >= win.start && r.date <= win.end);
+    const weekExpenses = expenses.filter(e => e.date >= win.start && e.date <= win.end);
+    const grossIncome = weekIncome.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalExp = weekExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const gstIncluded = grossIncome - grossIncome / 1.1;
+    return {
+      ...win,
+      weekIncome,
+      weekExpenses,
+      grossIncome,
+      totalExp,
+      gstIncluded,
+      netWeekly: grossIncome - totalExp
+    };
+  }, [reportWeekDate, receiptIncomeEntries, expenses]);
+
+  const monthlyBalanceSheet = useMemo(() => {
+    const mPrefix = reportMonth || new Date().toISOString().slice(0, 7);
+    const monthReceipts = receiptIncomeEntries.filter(r => String(r.date || '').startsWith(mPrefix));
+    const monthExpenses = expenses.filter(e => String(e.date || '').startsWith(mPrefix));
+    const monthInvoices = documents.filter(d => d.type === 'Proforma Invoice' && d.status !== 'Paid in Full' && String(d.date || '').startsWith(mPrefix));
+
+    const cashReceipts = monthReceipts.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const accountsReceivable = monthInvoices.reduce((s, d) => s + Math.max(0, Number(d.totalAmount || 0) - Number(d.paidAmount || 0)), 0);
+    const inventoryValue = catalog.reduce((s, c) => s + (c.itemType === 'Service' ? 0 : Number(c.stock || 0) * Number(c.unitPrice || 0)), 0);
+    const fleetBookValue = vehicles.length * 25000; // Baseline asset valuation per registered fleet unit
+    const totalAssets = cashReceipts + accountsReceivable + inventoryValue + fleetBookValue;
+
+    const gstPayable = cashReceipts - cashReceipts / 1.1;
+    const monthExpTotal = monthExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const totalLiabilities = gstPayable + monthExpTotal;
+    const totalEquity = totalAssets - totalLiabilities;
+
+    return {
+      month: mPrefix,
+      cashReceipts,
+      accountsReceivable,
+      inventoryValue,
+      fleetBookValue,
+      totalAssets,
+      gstPayable,
+      monthExpTotal,
+      totalLiabilities,
+      totalEquity
+    };
+  }, [reportMonth, receiptIncomeEntries, expenses, documents, catalog, vehicles]);
+
+  const yearlyTaxReturn = useMemo(() => {
+    const yr = reportTaxYear || new Date().toISOString().slice(0, 4);
+    const yearReceipts = receiptIncomeEntries.filter(r => String(r.date || '').startsWith(yr));
+    const yearExpenses = expenses.filter(e => String(e.date || '').startsWith(yr));
+
+    const grossTurnover = yearReceipts.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const gstCollected10Pct = grossTurnover - grossTurnover / 1.1;
+    const netSalesExclGst = grossTurnover / 1.1;
+    const allowableDeductions = yearExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const taxableNetProfit = Math.max(0, netSalesExclGst - allowableDeductions);
+    const estimatedCorporateTax30Pct = taxableNetProfit * 0.3;
+
+    return {
+      year: yr,
+      receiptCount: yearReceipts.length,
+      grossTurnover,
+      netSalesExclGst,
+      gstCollected10Pct,
+      allowableDeductions,
+      taxableNetProfit,
+      estimatedCorporateTax30Pct
+    };
+  }, [reportTaxYear, receiptIncomeEntries, expenses]);
 
   const officialReceipts = useMemo(
     () => documents.filter(d => d.type === 'Official Receipt' || d.status === 'Paid in Full'),
@@ -1021,7 +1141,6 @@ function TunzAccessoriesSuite() {
   const pendingInquiriesCount = inquiries.filter(i => i.status === 'Pending Approval').length;
   const waNumber = String(settings.whatsappNumber || '67579625068').replace(/[^0-9]/g, '');
 
-  // Helper to resolve display qty & label on any document row or A4 print
   const getDocQtyAndLabel = (docItem) => {
     const isCars = docItem.division === 'Tunz Cars';
     const isTrip = docItem.unitLabel === 'Trip';
@@ -1034,7 +1153,7 @@ function TunzAccessoriesSuite() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      <header className="bg-[#162238] text-white border-b-4 border-[#9A7B3E] sticky top-0 z-30 shadow-md">
+      <header className="bg-[#162238] text-white border-b-4 border-[#9A7B3E] sticky top-0 z-30 shadow-md print:hidden">
         <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3.5">
             <div className="bg-white rounded-xl p-1 shadow-md flex items-center justify-center shrink-0">
@@ -1449,7 +1568,8 @@ function TunzAccessoriesSuite() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {matchedCustomerReceipts.map(rc => {
-                      const { qtyVal, unitLabel } = getDocQtyAndLabel(rc);
+                      const qtyVal = Math.max(1, Number(rc.qty || 1));
+                      const unitLabel = rc.unitLabel || (rc.division === 'Tunz Cars' ? (qtyVal === 1 ? 'Day' : 'Days') : 'Units');
                       return (
                         <div key={rc.id} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 flex items-center justify-between gap-3">
                           <div>
@@ -1815,12 +1935,13 @@ function TunzAccessoriesSuite() {
 
       {mode === 'admin' && (
         <main className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-3">
+          <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-3 print:hidden">
             {[
               { id: 'overview', label: 'Group Overview', icon: TrendingUp },
               { id: 'requests', label: `Client Requests (${pendingInquiriesCount})`, icon: Calendar },
               { id: 'proofs', label: `Payment Proofs (${pendingProofsCount})`, icon: Upload },
               { id: 'receipts', label: `Receipt Portal (${officialReceipts.length})`, icon: Receipt },
+              { id: 'reports', label: 'Week / Balance / Tax Portal', icon: BarChart3 },
               { id: 'cars', label: 'Tunz Cars Fleet & Services', icon: Car },
               { id: 'catalog', label: 'Organics & Tech Catalog', icon: Package },
               { id: 'billing', label: 'Quotes & Invoices', icon: FileText },
@@ -1844,12 +1965,12 @@ function TunzAccessoriesSuite() {
           </div>
 
           {receiptBanner && (
-            <div className="mb-6 bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+            <div className="mb-6 bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-sm print:hidden">
               <div className="flex items-center gap-3">
                 <CheckCircle className="w-6 h-6 text-emerald-700 shrink-0" />
                 <div>
                   <div className="text-xs font-extrabold uppercase text-emerald-800">
-                    Payment Verified — Official Receipt Generated ({receiptBanner.id})
+                    Payment Verified & Added to Revenue — Receipt {receiptBanner.id}
                   </div>
                   <div className="text-sm font-bold text-slate-900">
                     {receiptBanner.clientName} • {formatPGK(receiptBanner.totalAmount)} ({receiptBanner.division})
@@ -1884,7 +2005,7 @@ function TunzAccessoriesSuite() {
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase">Group Collected Revenue</p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase">Receipt Income Revenue</p>
                   <p className="text-2xl font-extrabold text-emerald-700 mt-1">{formatPGK(metrics.collected)}</p>
                   <p className="text-xs text-slate-400 mt-1">10% IRC GST: {formatPGK(metrics.gst)}</p>
                 </div>
@@ -1907,13 +2028,262 @@ function TunzAccessoriesSuite() {
             </div>
           )}
 
+          {/* ADMINISTRATOR FINANCIAL & TAX REPORTING PORTAL */}
+          {adminTab === 'reports' && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4 print:hidden">
+                <div>
+                  <h3 className="text-xl font-extrabold text-[#162238]">Financial & Tax Reporting Portal</h3>
+                  <p className="text-xs text-slate-500">
+                    Generate Week Ending Reports, Monthly Balance Sheets, and Yearly Tax Returns from verified receipt revenue & expenses.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { id: 'weekly', label: 'Week Ending Report' },
+                    { id: 'balance_sheet', label: 'Monthly Balance Sheet' },
+                    { id: 'tax_return', label: 'Yearly Tax Return' }
+                  ].map(st => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => setReportSubTab(st.id)}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition ${
+                        reportSubTab === st.id ? 'bg-[#9E2A2B] text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-3.5 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold inline-flex items-center gap-1.5"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+                  </button>
+                </div>
+              </div>
+
+              {reportSubTab === 'weekly' && (
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-bold text-[#162238]">Select Any Date in Week:</label>
+                      <input
+                        type="date"
+                        value={reportWeekDate}
+                        onChange={e => setReportWeekDate(e.target.value)}
+                        className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold bg-white"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => exportCSV(`Week_Ending_${weeklyReport.end || 'Report'}.csv`, weeklyReport.weekIncome)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold inline-flex items-center gap-1"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Export Week CSV
+                    </button>
+                  </div>
+
+                  <div className="border-b-2 border-[#162238] pb-3 flex justify-between items-end">
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-[#9A7B3E]">{settings.companyName} • TIN: {settings.tinNumber}</span>
+                      <h4 className="text-lg font-extrabold text-[#162238]">Week Ending Financial Report</h4>
+                    </div>
+                    <div className="text-right text-xs font-bold text-slate-700">
+                      Week Window: {weeklyReport.label}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                      <p className="text-[11px] font-bold uppercase text-emerald-800">Weekly Receipt Income</p>
+                      <p className="text-xl font-extrabold text-emerald-800 mt-1">{formatPGK(weeklyReport.grossIncome)}</p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <p className="text-[11px] font-bold uppercase text-slate-600">10% PNG GST Portion</p>
+                      <p className="text-xl font-extrabold text-[#162238] mt-1">{formatPGK(weeklyReport.gstIncluded)}</p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-red-50 border border-red-200">
+                      <p className="text-[11px] font-bold uppercase text-[#9E2A2B]">Weekly Expenses</p>
+                      <p className="text-xl font-extrabold text-[#9E2A2B] mt-1">{formatPGK(weeklyReport.totalExp)}</p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-[#162238] text-white">
+                      <p className="text-[11px] font-bold uppercase text-[#E5C98B]">Net Weekly Surplus</p>
+                      <p className="text-xl font-extrabold mt-1">{formatPGK(weeklyReport.netWeekly)}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h5 className="text-sm font-bold text-[#162238] mb-2">Verified Receipts in Week ({weeklyReport.weekIncome.length})</h5>
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700">
+                          <th className="p-2.5">Date</th>
+                          <th className="p-2.5">Ref</th>
+                          <th className="p-2.5">Division / Client</th>
+                          <th className="p-2.5">Summary</th>
+                          <th className="p-2.5 text-right">Amount (PGK)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {weeklyReport.weekIncome.length === 0 ? (
+                          <tr><td colSpan="5" className="p-4 text-center text-slate-500">No verified receipts recorded in this week window.</td></tr>
+                        ) : weeklyReport.weekIncome.map((r, i) => (
+                          <tr key={`${r.id}-${i}`}>
+                            <td className="p-2.5">{r.date}</td>
+                            <td className="p-2.5 font-mono font-bold">{r.id}</td>
+                            <td className="p-2.5 font-semibold">{r.division} — {r.clientName}</td>
+                            <td className="p-2.5">{r.itemSummary}</td>
+                            <td className="p-2.5 text-right font-bold text-emerald-700">{formatPGK(r.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {reportSubTab === 'balance_sheet' && (
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-bold text-[#162238]">Select Balance Sheet Month:</label>
+                      <input
+                        type="month"
+                        value={reportMonth}
+                        onChange={e => setReportMonth(e.target.value)}
+                        className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border-b-2 border-[#162238] pb-3 flex justify-between items-end">
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-[#9A7B3E]">{settings.companyName} • IPA: {settings.ipaNumber}</span>
+                      <h4 className="text-lg font-extrabold text-[#162238]">Monthly Statement of Financial Position (Balance Sheet)</h4>
+                    </div>
+                    <div className="text-right text-xs font-bold text-slate-700">
+                      Reporting Month: {monthlyBalanceSheet.month}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                    <div className="border border-slate-200 rounded-xl p-4 space-y-2.5 bg-slate-50/50">
+                      <h5 className="font-extrabold text-sm text-[#162238] border-b border-slate-200 pb-1.5">ASSETS</h5>
+                      <div className="flex justify-between">
+                        <span>Cash & Verified Receipt Deposits ({monthlyBalanceSheet.month})</span>
+                        <span className="font-bold">{formatPGK(monthlyBalanceSheet.cashReceipts)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Accounts Receivable (Unpaid Invoices)</span>
+                        <span className="font-bold">{formatPGK(monthlyBalanceSheet.accountsReceivable)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Product Stock / Inventory Valuation</span>
+                        <span className="font-bold">{formatPGK(monthlyBalanceSheet.inventoryValue)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Tunz Cars Fleet Asset Valuation ({vehicles.length} units)</span>
+                        <span className="font-bold">{formatPGK(monthlyBalanceSheet.fleetBookValue)}</span>
+                      </div>
+                      <div className="flex justify-between font-extrabold text-sm text-[#162238] pt-2 border-t border-slate-300">
+                        <span>TOTAL ASSETS</span>
+                        <span>{formatPGK(monthlyBalanceSheet.totalAssets)}</span>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-xl p-4 space-y-2.5 bg-slate-50/50">
+                      <h5 className="font-extrabold text-sm text-[#162238] border-b border-slate-200 pb-1.5">LIABILITIES & EQUITY</h5>
+                      <div className="flex justify-between">
+                        <span>PNG IRC GST Payable (10% of Monthly Receipts)</span>
+                        <span className="font-bold text-[#9E2A2B]">{formatPGK(monthlyBalanceSheet.gstPayable)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Monthly Operating Expenses & Payables</span>
+                        <span className="font-bold text-[#9E2A2B]">{formatPGK(monthlyBalanceSheet.monthExpTotal)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-slate-800 pt-1 border-t border-slate-200">
+                        <span>Total Liabilities</span>
+                        <span>{formatPGK(monthlyBalanceSheet.totalLiabilities)}</span>
+                      </div>
+                      <div className="flex justify-between font-extrabold text-sm text-emerald-800 pt-2 border-t border-slate-300">
+                        <span>NET OWNER EQUITY</span>
+                        <span>{formatPGK(monthlyBalanceSheet.totalEquity)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {reportSubTab === 'tax_return' && (
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-bold text-[#162238]">Tax Assessment Year:</label>
+                      <select
+                        value={reportTaxYear}
+                        onChange={e => setReportTaxYear(e.target.value)}
+                        className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold bg-white"
+                      >
+                        <option value="2025">2025</option>
+                        <option value="2026">2026</option>
+                        <option value="2027">2027</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="border-b-2 border-[#9E2A2B] pb-3 flex justify-between items-end">
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-[#9E2A2B]">
+                        PNG IRC TIN: {settings.tinNumber} • IPA: {settings.ipaNumber}
+                      </span>
+                      <h4 className="text-lg font-extrabold text-[#162238]">Annual Tax Return & GST Summary ({yearlyTaxReturn.year})</h4>
+                    </div>
+                    <div className="text-right text-xs font-bold text-slate-700">
+                      Verified Receipts: {yearlyTaxReturn.receiptCount}
+                    </div>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl p-5 space-y-3 text-xs bg-slate-50/60">
+                    <div className="flex justify-between">
+                      <span>Gross Verified Receipt Turnover (GST Inclusive)</span>
+                      <span className="font-extrabold text-sm text-[#162238]">{formatPGK(yearlyTaxReturn.grossTurnover)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Less: PNG Goods & Services Tax (10% GST)</span>
+                      <span className="font-bold text-[#9E2A2B]">{formatPGK(yearlyTaxReturn.gstCollected10Pct)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold border-t border-slate-200 pt-2">
+                      <span>Net Sales Revenue (Excluding 10% GST)</span>
+                      <span>{formatPGK(yearlyTaxReturn.netSalesExclGst)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Less: Allowable Operating Expenses ({yearlyTaxReturn.year})</span>
+                      <span className="font-bold text-[#9E2A2B]">{formatPGK(yearlyTaxReturn.allowableDeductions)}</span>
+                    </div>
+                    <div className="flex justify-between font-extrabold text-sm border-t border-slate-300 pt-2 text-[#162238]">
+                      <span>Taxable Net Income</span>
+                      <span>{formatPGK(yearlyTaxReturn.taxableNetProfit)}</span>
+                    </div>
+                    <div className="flex justify-between font-extrabold text-sm bg-[#162238] text-[#E5C98B] p-3 rounded-lg mt-2">
+                      <span>Estimated Corporate Income Tax Provision (30% Reference)</span>
+                      <span>{formatPGK(yearlyTaxReturn.estimatedCorporateTax30Pct)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {adminTab === 'receipts' && (
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-extrabold text-[#162238]">Official Receipt Dispatch Portal</h3>
                   <p className="text-xs text-slate-500">
-                    Receipts generated automatically from verified payments—send directly to customers via WhatsApp, Email, or print A4 copies.
+                    Verified receipt amounts automatically count toward income revenue ({formatPGK(metrics.collected)} total).
                   </p>
                 </div>
                 <button
@@ -1937,7 +2307,7 @@ function TunzAccessoriesSuite() {
                         <th className="p-3">Receipt # / Division</th>
                         <th className="p-3">Customer & Contact</th>
                         <th className="p-3">Item / Duration</th>
-                        <th className="p-3">Amount Paid</th>
+                        <th className="p-3">Amount Paid (Revenue)</th>
                         <th className="p-3">Dispatch Status</th>
                         <th className="p-3 text-right">Generate & Send</th>
                       </tr>
@@ -2040,9 +2410,7 @@ function TunzAccessoriesSuite() {
                     <tbody className="divide-y divide-slate-200">
                       {inquiries.map(inq => {
                         const isFlat = inq.pricingMode === 'flat_trip' || inq.unitLabel === 'Trip';
-                        const daysCount = inq.division === 'Tunz Cars' && !isFlat && inq.startDate && inq.endDate
-                          ? calcDaysInclusive(inq.startDate, inq.endDate)
-                          : Number(inq.qty || 1);
+                        const daysCount = Math.max(1, Number(inq.qty || 1));
                         const lbl = inq.unitLabel || (inq.division === 'Tunz Cars' ? (isFlat ? 'Trip' : (daysCount === 1 ? 'Day' : 'Days')) : 'Units');
                         return (
                           <tr key={inq.id}>
@@ -2630,7 +2998,6 @@ function TunzAccessoriesSuite() {
       {payModal && <PaymentModal documents={documents} onClose={() => setPayModal(false)} onSave={logPayment} />}
       {expModal && <ExpenseModal onClose={() => setExpModal(false)} onSave={logExpense} />}
 
-      {/* CORPORATE A4 QUOTATION / PROFORMA INVOICE / OFFICIAL RECEIPT PREVIEW */}
       {previewDoc && (() => {
         const { qtyVal, unitLabel } = getDocQtyAndLabel(previewDoc);
         const isCars = previewDoc.division === 'Tunz Cars';
@@ -3085,7 +3452,6 @@ function CatalogModal({ initial, onClose, onSave }) {
   );
 }
 
-// Updated DocumentModal with Start Date, Return Date, Auto-Calculated Days & Total Preview
 function DocumentModal({ initial, vehicles, onClose, onSave }) {
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
