@@ -379,34 +379,35 @@ function TunzAccessoriesSuite() {
     if (!user) return;
     const base = ['artifacts', APP_ID, 'public', 'data'];
 
+    const safeMap = (s) => s.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
     const u0 = onSnapshot(doc(db, ...base, 'config', 'site_settings'), (snap) => {
-      if (snap.exists()) {
+      if (snap.exists() && snap.data()) {
         setSettings(prev => ({ ...prev, ...snap.data() }));
       }
     }, () => {});
     const u1 = onSnapshot(query(collection(db, ...base, 'vehicles')), (s) => {
-      if (!s.empty) setVehicles(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (!s.empty) setVehicles(safeMap(s));
     }, () => {});
     const u1b = onSnapshot(query(collection(db, ...base, 'car_services')), (s) => {
-      if (!s.empty) setCarServices(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (!s.empty) setCarServices(safeMap(s));
     }, () => {});
     const u2 = onSnapshot(query(collection(db, ...base, 'catalog')), (s) => {
-      if (!s.empty) setCatalog(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (!s.empty) setCatalog(safeMap(s));
     }, () => {});
     const u3 = onSnapshot(query(collection(db, ...base, 'inquiries')), (s) => {
-      setInquiries(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      setInquiries(safeMap(s));
     }, () => {});
     const u4 = onSnapshot(query(collection(db, ...base, 'documents')), (s) => {
-      if (!s.empty) setDocuments(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (!s.empty) setDocuments(safeMap(s));
     }, () => {});
     const u5 = onSnapshot(query(collection(db, ...base, 'payments')), (s) => {
-      setPayments(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      setPayments(safeMap(s));
     }, () => {});
     const u6 = onSnapshot(query(collection(db, ...base, 'expenses')), (s) => {
-      setExpenses(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      setExpenses(safeMap(s));
     }, () => {});
     const u7 = onSnapshot(query(collection(db, ...base, 'payment_submissions')), (s) => {
-      setPaymentSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      setPaymentSubmissions(safeMap(s));
     }, () => {});
 
     return () => { u0(); u1(); u1b(); u2(); u3(); u4(); u5(); u6(); u7(); };
@@ -3098,4 +3099,47 @@ function ExpenseModal({ onClose, onSave }) {
   );
 }
 
-export default TunzAccessoriesSuite;
+class SuiteErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, errorMessage: error?.message || String(error) };
+  }
+  componentDidCatch(error, info) {
+    console.error('Tunz Suite Render Error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 font-sans">
+          <div className="bg-white rounded-2xl border-2 border-red-500 p-6 max-w-lg w-full shadow-xl space-y-4">
+            <h2 className="text-lg font-extrabold text-red-700">Tunz Accessories — Display Recovery</h2>
+            <p className="text-xs text-slate-600">
+              A temporary rendering error occurred while loading live data:
+            </p>
+            <pre className="bg-slate-900 text-red-300 text-xs p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
+              {this.state.errorMessage}
+            </pre>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold"
+            >
+              Reload Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function TunzAccessoriesRoot() {
+  return (
+    <SuiteErrorBoundary>
+      <TunzAccessoriesSuite />
+    </SuiteErrorBoundary>
+  );
+}
