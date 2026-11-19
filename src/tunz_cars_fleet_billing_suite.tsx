@@ -710,6 +710,18 @@ function TunzAccessoriesSuite() {
     setAdminTab('billing');
   };
 
+  const declineInquiry = async (inq) => {
+    const updated = { ...inq, status: 'Declined / Cancelled' };
+    setInquiries(prev => prev.map(x => x.id === inq.id ? updated : x));
+    await saveCloud('inquiries', inq.id, updated);
+  };
+
+  const declinePaymentSubmission = async (sub) => {
+    const updated = { ...sub, status: 'Declined' };
+    setPaymentSubmissions(prev => prev.map(s => s.id === sub.id ? updated : s));
+    await saveCloud('payment_submissions', sub.id, updated);
+  };
+
   // Save Site & WhatsApp Settings Live
   const handleSaveSettings = async (e) => {
     e.preventDefault();
@@ -825,8 +837,7 @@ function TunzAccessoriesSuite() {
   const exportCSV = (filename, rows) => {
     if (!rows.length) return;
     const headers = Object.keys(rows[0]).filter(k => k !== 'receiptImage');
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('
-');
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1816,15 +1827,33 @@ function TunzAccessoriesSuite() {
                           <td className="p-3 font-extrabold">{formatPGK(inq.totalAmount)}</td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                              inq.status === 'Approved & Invoiced' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              inq.status === 'Approved & Invoiced'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : inq.status === 'Declined / Cancelled'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-amber-100 text-amber-800'
                             }`}>{inq.status}</span>
                           </td>
                           <td className="p-3">
-                            {inq.status === 'Pending Approval' && (
-                              <button onClick={() => approveInquiry(inq)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
-                                Approve & Issue Invoice
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {inq.status === 'Pending Approval' && (
+                                <>
+                                  <button onClick={() => approveInquiry(inq)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+                                    Approve & Invoice
+                                  </button>
+                                  <button onClick={() => declineInquiry(inq)} className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">
+                                    Decline
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                onClick={() => setDeleteConfirm({ col: 'inquiries', id: inq.id, name: `${inq.id} (${inq.clientName})` })}
+                                title="Delete Request"
+                                className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1885,18 +1914,37 @@ function TunzAccessoriesSuite() {
                             )}
                           </td>
                           <td className="p-3">
-                            {sub.status === 'Pending Verification' ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {sub.status === 'Pending Verification' ? (
+                                <>
+                                  <button
+                                    onClick={() => verifyPaymentSubmission(sub)}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                                  >
+                                    Verify & Issue Receipt
+                                  </button>
+                                  <button
+                                    onClick={() => declinePaymentSubmission(sub)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+                                  >
+                                    Decline
+                                  </button>
+                                </>
+                              ) : (
+                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                                  sub.status === 'Declined' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
+                                }`}>
+                                  {sub.status}
+                                </span>
+                              )}
                               <button
-                                onClick={() => verifyPaymentSubmission(sub)}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                                onClick={() => setDeleteConfirm({ col: 'payment_submissions', id: sub.id, name: `${sub.id} (${sub.payerName})` })}
+                                title="Delete Proof"
+                                className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700"
                               >
-                                Verify & Issue Receipt
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
-                            ) : (
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-                                {sub.status}
-                              </span>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2123,6 +2171,9 @@ function TunzAccessoriesSuite() {
                           </button>
                           <button onClick={() => setDocModal({ open: true, data: d })} className="p-1.5 rounded bg-slate-100 text-slate-700">
                             <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => setDeleteConfirm({ col: 'documents', id: d.id, name: `${d.id} (${d.clientName})` })} className="p-1.5 rounded bg-red-50 text-red-700">
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </td>
                       </tr>
@@ -2485,6 +2536,9 @@ function TunzAccessoriesSuite() {
                   if (deleteConfirm.col === 'vehicles') setVehicles(p => p.filter(x => x.id !== deleteConfirm.id));
                   if (deleteConfirm.col === 'car_services') setCarServices(p => p.filter(x => x.id !== deleteConfirm.id));
                   if (deleteConfirm.col === 'catalog') setCatalog(p => p.filter(x => x.id !== deleteConfirm.id));
+                  if (deleteConfirm.col === 'inquiries') setInquiries(p => p.filter(x => x.id !== deleteConfirm.id));
+                  if (deleteConfirm.col === 'payment_submissions') setPaymentSubmissions(p => p.filter(x => x.id !== deleteConfirm.id));
+                  if (deleteConfirm.col === 'documents') setDocuments(p => p.filter(x => x.id !== deleteConfirm.id));
                   await deleteCloud(deleteConfirm.col, deleteConfirm.id);
                   setDeleteConfirm(null);
                 }}
