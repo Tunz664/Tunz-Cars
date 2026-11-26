@@ -265,6 +265,166 @@ const numberToWordsPGK = (amount) => {
   return `${words.trim()} Kina${toea > 0 ? ` and ${toea} Toea` : ''} Only`;
 };
 
+const generateAndSaveQuotePdf = async (docItem, settings) => {
+  const safeFileName = `${docItem.id}_${String(docItem.clientName || 'Client').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+  try {
+    const { jsPDF } = await import('https://esm.sh/jspdf@2.5.2');
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const isCars = docItem.division === 'Tunz Cars';
+    const qtyVal = Math.max(1, Number(docItem.qty || 1));
+    const unitLabel = docItem.unitLabel || (isCars ? (qtyVal === 1 ? 'Day' : 'Days') : 'Units');
+    const totalAmt = Number(docItem.totalAmount || 0);
+    const exclGst = totalAmt / 1.1;
+    const gstAmt = totalAmt - exclGst;
+
+    pdf.setFillColor(22, 34, 56);
+    pdf.rect(0, 0, 210, 36, 'F');
+    pdf.setFillColor(154, 123, 62);
+    pdf.rect(0, 36, 210, 2, 'F');
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(18);
+    pdf.text(isCars ? 'TUNZ CARS' : (settings.companyName || 'TUNZ ACCESSORIES').toUpperCase(), 15, 16);
+
+    pdf.setFontSize(9);
+    pdf.setTextColor(229, 201, 139);
+    pdf.text(isCars ? `A Subsidiary of ${settings.companyName}` : `Operating Division: ${docItem.division}`, 15, 22);
+
+    pdf.setTextColor(220, 225, 235);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.text(`Phone/WhatsApp: ${settings.phoneDisplay}  |  Email: ${settings.email}`, 15, 28);
+    pdf.text(`IPA Reg #: ${settings.ipaNumber}  |  IRC TIN: ${settings.tinNumber}`, 15, 33);
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(15);
+    pdf.text((docItem.type || 'QUOTATION').toUpperCase(), 195, 16, { align: 'right' });
+    pdf.setFontSize(10);
+    pdf.setTextColor(229, 201, 139);
+    pdf.text(docItem.id, 195, 22, { align: 'right' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(`Date: ${docItem.date}`, 195, 28, { align: 'right' });
+    pdf.text(`Status: ${docItem.status}`, 195, 33, { align: 'right' });
+
+    pdf.setFillColor(248, 250, 252);
+    pdf.setDrawColor(203, 213, 225);
+    pdf.roundedRect(15, 45, 180, 30, 2, 2, 'FD');
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(154, 123, 62);
+    pdf.text('PREPARED FOR (CLIENT / ORGANIZATION):', 20, 52);
+
+    pdf.setTextColor(15, 23, 42);
+    pdf.setFontSize(11);
+    pdf.text(String(docItem.clientName || ''), 20, 58);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(`Phone / WhatsApp: ${docItem.clientContact || 'N/A'}`, 20, 64);
+    pdf.text(`Email: ${docItem.clientEmail || 'N/A'}`, 20, 70);
+
+    if (isCars && docItem.startDate) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(154, 123, 62);
+      pdf.text('HIRE / SERVICE SCHEDULE:', 190, 52, { align: 'right' });
+      pdf.setTextColor(22, 34, 56);
+      pdf.setFontSize(9.5);
+      pdf.text(`${docItem.startDate} to ${docItem.endDate || docItem.startDate}`, 190, 58, { align: 'right' });
+      pdf.setTextColor(158, 42, 43);
+      pdf.text(`Duration: ${qtyVal} ${unitLabel}`, 190, 64, { align: 'right' });
+    }
+
+    let y = 84;
+    pdf.setFillColor(22, 34, 56);
+    pdf.rect(15, y, 180, 9, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8.5);
+    pdf.text('DESCRIPTION', 18, y + 6);
+    pdf.text(`QTY (${unitLabel.toUpperCase()})`, 122, y + 6, { align: 'center' });
+    pdf.text('UNIT RATE', 155, y + 6, { align: 'right' });
+    pdf.text('TOTAL (PGK)', 192, y + 6, { align: 'right' });
+
+    y += 14;
+    pdf.setTextColor(15, 23, 42);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9.5);
+    const titleLines = pdf.splitTextToSize(String(docItem.itemSummary || ''), 92);
+    pdf.text(titleLines, 18, y);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8.5);
+    pdf.text(`${qtyVal} ${unitLabel}`, 122, y, { align: 'center' });
+    pdf.text(formatPGK(docItem.unitRate), 155, y, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(formatPGK(totalAmt), 192, y, { align: 'right' });
+
+    y += titleLines.length * 5 + 2;
+    if (docItem.notes) {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(71, 85, 105);
+      const noteLines = pdf.splitTextToSize(String(docItem.notes), 95);
+      pdf.text(noteLines, 18, y);
+      y += noteLines.length * 4.5 + 4;
+    }
+
+    pdf.setDrawColor(203, 213, 225);
+    pdf.line(15, y + 2, 195, y + 2);
+    y += 10;
+
+    pdf.setFillColor(248, 250, 252);
+    pdf.rect(15, y, 105, 32, 'F');
+    pdf.setFillColor(158, 42, 43);
+    pdf.rect(15, y, 2, 32, 'F');
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(158, 42, 43);
+    pdf.text('OFFICIAL BANKING DETAILS', 21, y + 6);
+    pdf.setTextColor(30, 41, 59);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.text(`Account Name: ${settings.accountName}`, 21, y + 12);
+    pdf.text(`Bank: ${settings.bankName}`, 21, y + 17);
+    pdf.text(`Account #: ${settings.accountNumber}`, 21, y + 22);
+    pdf.text(`Amount in Words: ${numberToWordsPGK(totalAmt)}`, 21, y + 28, { maxWidth: 96 });
+
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text('Subtotal (Excl. GST):', 130, y + 6);
+    pdf.text(formatPGK(exclGst), 193, y + 6, { align: 'right' });
+    pdf.text('PNG GST (10%):', 130, y + 13);
+    pdf.text(formatPGK(gstAmt), 193, y + 13, { align: 'right' });
+
+    pdf.setFillColor(22, 34, 56);
+    pdf.rect(128, y + 18, 67, 11, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9.5);
+    pdf.text('TOTAL (PGK):', 132, y + 25);
+    pdf.text(formatPGK(totalAmt), 192, y + 25, { align: 'right' });
+
+    pdf.setFont('helvetica', 'italic');
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text('Thank you for doing business with Tunz Accessories Group (PNG). Quotation valid for 14 days.', 105, 282, { align: 'center' });
+
+    pdf.save(safeFileName);
+    return safeFileName;
+  } catch (err) {
+    console.error('PDF generation fallback:', err);
+    return null;
+  }
+};
+
 const compressImageFile = (file, maxW = 720, quality = 0.72) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = (ev) => {
@@ -364,6 +524,8 @@ function TunzAccessoriesSuite() {
   const [copiedAcc, setCopiedAcc] = useState(false);
   const [settingsSavedBanner, setSettingsSavedBanner] = useState(false);
   const [receiptBanner, setReceiptBanner] = useState(null);
+  const [approveModal, setApproveModal] = useState({ open: false, inquiry: null });
+  const [approvedQuoteBanner, setApprovedQuoteBanner] = useState(null);
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [vehicles, setVehicles] = useState(INITIAL_FLEET);
@@ -405,6 +567,7 @@ function TunzAccessoriesSuite() {
     clientName: '',
     organization: '',
     phone: '',
+    email: '',
     licenseNo: '',
     startDate: '2026-11-21',
     endDate: '2026-11-23',
@@ -420,6 +583,7 @@ function TunzAccessoriesSuite() {
     clientName: '',
     organization: '',
     phone: '',
+    email: '',
     deliveryLocation: 'Port Moresby / Kavieng',
     notes: ''
   });
@@ -502,19 +666,21 @@ function TunzAccessoriesSuite() {
     const periodLine = (docItem.division === 'Tunz Cars' && docItem.startDate && docItem.endDate)
       ? `Period: ${docItem.startDate} to ${docItem.endDate} (${qtyVal} ${label})`
       : `Quantity: ${qtyVal} ${label} @ ${formatPGK(docItem.unitRate)}`;
+    const isQuote = docItem.type === 'Quotation';
     return [
-      `*${settings.companyName} — ${docItem.type || 'Official Receipt'}*`,
+      `*${settings.companyName} — ${docItem.type || 'Official Document'}*`,
       `Ref #: ${docItem.id}`,
       `Division: ${docItem.division}`,
       `Client: ${docItem.clientName}`,
       `Item / Service: ${docItem.itemSummary}`,
       periodLine,
-      `Total Amount (PGK): ${formatPGK(docItem.totalAmount)}`,
-      `Payment Ref: ${docItem.paymentRef || 'Verified'}`,
+      `Total Amount (PGK): ${formatPGK(docItem.totalAmount)} (10% GST Incl.)`,
+      !isQuote ? `Payment Ref: ${docItem.paymentRef || 'Verified'}` : `Validity: 14 Days from ${docItem.date}`,
       `Date: ${docItem.date}`,
       `Bank Acc: ${settings.bankName} (${settings.accountNumber})`,
-      `TIN: ${settings.tinNumber} • IPA: ${settings.ipaNumber}`
-    ].join('\n');
+      `TIN: ${settings.tinNumber} • IPA: ${settings.ipaNumber}`,
+      isQuote ? `\nPlease find your official PDF Quotation (${docItem.id}.pdf) attached.` : ''
+    ].filter(Boolean).join('\n');
   };
 
   const activeCarServices = useMemo(() => carServices.filter(s => s.active !== false), [carServices]);
@@ -624,6 +790,7 @@ function TunzAccessoriesSuite() {
       clientName: carForm.clientName,
       organization: carForm.organization,
       phone: carForm.phone,
+      email: carForm.email,
       itemSummary: `${selectedCarService.title}: ${selectedVehicle.name} (${selectedVehicle.plate} • ${selectedVehicle.town || 'Kavieng'})`,
       startDate: carForm.startDate,
       endDate: isFlatTripService ? carForm.startDate : carForm.endDate,
@@ -656,6 +823,7 @@ function TunzAccessoriesSuite() {
       clientName: orderForm.clientName,
       organization: orderForm.organization,
       phone: orderForm.phone,
+      email: orderForm.email,
       itemSummary: `${selectedProduct.name}${selectedProduct.onSale ? ' [ON SALE]' : ''}${selectedProduct.itemType ? ` [${selectedProduct.itemType}]` : ''}`,
       startDate: new Date().toISOString().slice(0, 10),
       endDate: new Date().toISOString().slice(0, 10),
@@ -832,39 +1000,60 @@ function TunzAccessoriesSuite() {
     }
   };
 
-  const approveInquiry = async (inq) => {
-    const updated = { ...inq, status: 'Approved & Invoiced' };
-    setInquiries(prev => prev.map(x => x.id === inq.id ? updated : x));
-    await saveCloud('inquiries', inq.id, updated);
+  const confirmEditAndApproveInquiry = async (editedInq) => {
+    const isFlat = editedInq.pricingMode === 'flat_trip' || editedInq.unitLabel === 'Trip';
+    const resolvedQty = Math.max(1, Number(editedInq.qty || 1));
+    const resolvedUnitLabel = editedInq.division === 'Tunz Cars'
+      ? (isFlat ? 'Trip' : (resolvedQty === 1 ? 'Day' : 'Days'))
+      : (editedInq.unitLabel || 'Units');
+    const resolvedRate = Number(editedInq.unitRate || 0);
+    const resolvedTotal = resolvedQty * resolvedRate;
 
-    const isFlat = inq.pricingMode === 'flat_trip' || inq.unitLabel === 'Trip';
-    const resolvedDays = Math.max(1, Number(inq.qty || 1));
-    const resolvedUnitLabel = inq.division === 'Tunz Cars'
-      ? (isFlat ? 'Trip' : (resolvedDays === 1 ? 'Day' : 'Days'))
-      : 'Units';
-
-    const piId = `TA-PI-2026-${String(documents.length + 1).padStart(3, '0')}`;
-    const newDoc = {
-      id: piId,
-      division: inq.division,
-      type: 'Proforma Invoice',
-      status: 'Unpaid',
-      date: new Date().toISOString().slice(0, 10),
-      clientName: inq.organization ? `${inq.organization} (${inq.clientName})` : inq.clientName,
-      clientContact: inq.phone,
-      itemSummary: inq.itemSummary,
-      startDate: inq.startDate,
-      endDate: inq.endDate,
-      qty: resolvedDays,
+    const updatedInq = {
+      ...editedInq,
+      qty: resolvedQty,
       unitLabel: resolvedUnitLabel,
-      unitRate: Number(inq.unitRate || 0),
-      totalAmount: Number(inq.totalAmount || resolvedDays * Number(inq.unitRate || 0)),
-      paidAmount: 0,
-      notes: `${inq.details} • Ref: ${inq.id}`
+      unitRate: resolvedRate,
+      totalAmount: resolvedTotal,
+      status: 'Approved & Quoted'
     };
-    setDocuments(prev => [newDoc, ...prev]);
-    await saveCloud('documents', piId, newDoc);
-    setAdminTab('billing');
+
+    setInquiries(prev => prev.map(x => x.id === updatedInq.id ? updatedInq : x));
+    await saveCloud('inquiries', updatedInq.id, updatedInq);
+
+    const qtId = `TA-QT-2026-${String(documents.length + 1).padStart(3, '0')}`;
+    const newQuoteDoc = {
+      id: qtId,
+      division: updatedInq.division,
+      type: 'Quotation',
+      status: 'Sent',
+      date: new Date().toISOString().slice(0, 10),
+      clientName: updatedInq.organization
+        ? `${updatedInq.organization} (${updatedInq.clientName})`
+        : updatedInq.clientName,
+      clientContact: updatedInq.phone || '',
+      clientEmail: updatedInq.email || '',
+      itemSummary: updatedInq.itemSummary,
+      startDate: updatedInq.startDate,
+      endDate: updatedInq.endDate,
+      qty: resolvedQty,
+      unitLabel: resolvedUnitLabel,
+      unitRate: resolvedRate,
+      totalAmount: resolvedTotal,
+      paidAmount: 0,
+      notes: `${updatedInq.details || ''} • Request Ref: ${updatedInq.id}`
+    };
+
+    setDocuments(prev => [newQuoteDoc, ...prev]);
+    await saveCloud('documents', qtId, newQuoteDoc);
+
+    const savedPdfName = await generateAndSaveQuotePdf(newQuoteDoc, settings);
+
+    setApproveModal({ open: false, inquiry: null });
+    setApprovedQuoteBanner({ doc: newQuoteDoc, fileName: savedPdfName || `${qtId}.pdf` });
+    if (!savedPdfName) {
+      setPreviewDoc(newQuoteDoc);
+    }
   };
 
   const declineInquiry = async (inq) => {
@@ -1765,6 +1954,11 @@ function TunzAccessoriesSuite() {
                     </div>
 
                     <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Email Address (for Quote PDF)</label>
+                      <input type="email" placeholder="client@example.com" value={carForm.email} onChange={e => setCarForm({ ...carForm, email: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+
+                    <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">Precise Pickup Landmark / Street *</label>
                       <input type="text" required value={carForm.pickupAddress} onChange={e => setCarForm({ ...carForm, pickupAddress: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
                     </div>
@@ -1881,6 +2075,10 @@ function TunzAccessoriesSuite() {
                     </div>
                   </div>
                   <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Email Address (for Quote PDF)</label>
+                    <input type="email" placeholder="client@example.com" value={orderForm.email} onChange={e => setOrderForm({ ...orderForm, email: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Custom Specs / Branding Notes</label>
                     <input type="text" value={orderForm.notes} onChange={e => setOrderForm({ ...orderForm, notes: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
                   </div>
@@ -1965,6 +2163,63 @@ function TunzAccessoriesSuite() {
               </div>
             </div>
           )}
+
+          {approvedQuoteBanner && (() => {
+            const qDoc = approvedQuoteBanner.doc;
+            const shareText = buildCustomerShareText(qDoc);
+            const phoneDigits = toDigitsPhone(qDoc.clientContact);
+            return (
+              <div className="mb-6 bg-blue-50 border-2 border-[#162238] rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-md print:hidden">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-6 h-6 text-[#9E2A2B] shrink-0" />
+                  <div>
+                    <div className="text-xs font-extrabold uppercase text-[#9E2A2B]">
+                      Quote Approved & PDF Saved — {approvedQuoteBanner.fileName}
+                    </div>
+                    <div className="text-sm font-bold text-slate-900">
+                      {qDoc.clientName} • {formatPGK(qDoc.totalAmount)} ({qDoc.division})
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      WhatsApp: {qDoc.clientContact || 'Not entered'} • Email: {qDoc.clientEmail || 'Not entered'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => generateAndSaveQuotePdf(qDoc, settings)}
+                    className="px-3 py-1.5 rounded-lg bg-[#9E2A2B] hover:bg-[#822021] text-white text-xs font-bold inline-flex items-center gap-1"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Save PDF Again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc(qDoc)}
+                    className="px-3 py-1.5 rounded-lg bg-[#162238] text-white text-xs font-bold inline-flex items-center gap-1"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> A4 Preview
+                  </button>
+                  <a
+                    href={`https://wa.me/${phoneDigits || waNumber}?text=${encodeURIComponent(shareText)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                  >
+                    <Send className="w-3.5 h-3.5" /> Send to WhatsApp
+                  </a>
+                  <a
+                    href={`mailto:${encodeURIComponent(qDoc.clientEmail || '')}?subject=${encodeURIComponent(`Quotation ${qDoc.id} — ${settings.companyName}`)}&body=${encodeURIComponent(shareText)}`}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                  >
+                    <Mail className="w-3.5 h-3.5" /> Send to Email
+                  </a>
+                  <button type="button" onClick={() => setApprovedQuoteBanner(null)} className="p-1.5 rounded-lg bg-white text-slate-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {adminTab === 'overview' && (
             <div className="space-y-6">
@@ -2430,7 +2685,10 @@ function TunzAccessoriesSuite() {
                             </td>
                             <td className="p-3">
                               <div className="font-bold">{inq.clientName}</div>
-                              <div className="text-xs text-slate-500">{inq.organization} • {inq.phone}</div>
+                              <div className="text-xs text-slate-500">
+                                {inq.organization ? `${inq.organization} • ` : ''}{inq.phone}
+                              </div>
+                              {inq.email && <div className="text-xs text-blue-700 font-medium">{inq.email}</div>}
                             </td>
                             <td className="p-3 text-xs">
                               <div className="font-bold">{inq.itemSummary} ({daysCount} {lbl})</div>
@@ -2442,7 +2700,7 @@ function TunzAccessoriesSuite() {
                             <td className="p-3 font-extrabold">{formatPGK(inq.totalAmount)}</td>
                             <td className="p-3">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                                inq.status === 'Approved & Invoiced'
+                                inq.status === 'Approved & Invoiced' || inq.status === 'Approved & Quoted'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : inq.status === 'Declined / Cancelled'
                                   ? 'bg-red-100 text-red-800'
@@ -2453,8 +2711,11 @@ function TunzAccessoriesSuite() {
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {inq.status === 'Pending Approval' && (
                                   <>
-                                    <button onClick={() => approveInquiry(inq)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
-                                      Approve & Invoice
+                                    <button
+                                      onClick={() => setApproveModal({ open: true, inquiry: inq })}
+                                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" /> Edit & Approve Quote
                                     </button>
                                     <button onClick={() => declineInquiry(inq)} className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">
                                       Decline
@@ -2790,16 +3051,41 @@ function TunzAccessoriesSuite() {
                               d.status === 'Paid in Full' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                             }`}>{d.status}</span>
                           </td>
-                          <td className="p-3 text-right space-x-2">
-                            <button onClick={() => setPreviewDoc(d)} className="px-2.5 py-1.5 rounded bg-[#162238] text-white text-xs font-bold inline-flex items-center gap-1">
-                              <Printer className="w-3.5 h-3.5" /> A4 View
-                            </button>
-                            <button onClick={() => setDocModal({ open: true, data: d })} className="p-1.5 rounded bg-slate-100 text-slate-700">
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => setDeleteConfirm({ col: 'documents', id: d.id, name: d.id })} className="p-1.5 rounded bg-red-50 text-red-700">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                          <td className="p-3 text-right">
+                            <div className="flex flex-wrap justify-end items-center gap-1.5">
+                              <button
+                                onClick={() => generateAndSaveQuotePdf(d, settings)}
+                                className="px-2.5 py-1.5 rounded bg-[#9E2A2B] hover:bg-[#822021] text-white text-xs font-bold inline-flex items-center gap-1"
+                                title="Save PDF File"
+                              >
+                                <Download className="w-3.5 h-3.5" /> PDF
+                              </button>
+                              <button onClick={() => setPreviewDoc(d)} className="px-2.5 py-1.5 rounded bg-[#162238] text-white text-xs font-bold inline-flex items-center gap-1">
+                                <Printer className="w-3.5 h-3.5" /> A4 View
+                              </button>
+                              <a
+                                href={`https://wa.me/${toDigitsPhone(d.clientContact) || waNumber}?text=${encodeURIComponent(buildCustomerShareText(d))}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                                title="Send via WhatsApp"
+                              >
+                                <Send className="w-3.5 h-3.5" /> WA
+                              </a>
+                              <a
+                                href={`mailto:${encodeURIComponent(d.clientEmail || '')}?subject=${encodeURIComponent(`${d.type} ${d.id} — ${settings.companyName}`)}&body=${encodeURIComponent(buildCustomerShareText(d))}`}
+                                className="px-2.5 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                                title="Send via Email"
+                              >
+                                <Mail className="w-3.5 h-3.5" /> Email
+                              </a>
+                              <button onClick={() => setDocModal({ open: true, data: d })} className="p-1.5 rounded bg-slate-100 text-slate-700" title="Edit">
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => setDeleteConfirm({ col: 'documents', id: d.id, name: d.id })} className="p-1.5 rounded bg-red-50 text-red-700" title="Delete">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -3015,6 +3301,13 @@ function TunzAccessoriesSuite() {
       )}
 
       {docModal.open && <DocumentModal initial={docModal.data} vehicles={vehicles} catalog={catalog} onClose={() => setDocModal({ open: false, data: null })} onSave={saveDocument} />}
+      {approveModal.open && approveModal.inquiry && (
+        <ApproveRequestModal
+          inquiry={approveModal.inquiry}
+          onClose={() => setApproveModal({ open: false, inquiry: null })}
+          onApproveAndSavePdf={confirmEditAndApproveInquiry}
+        />
+      )}
       {payModal && <PaymentModal documents={documents} onClose={() => setPayModal(false)} onSave={logPayment} />}
       {expModal && <ExpenseModal onClose={() => setExpModal(false)} onSave={logExpense} />}
 
@@ -3711,6 +4004,138 @@ function ExpenseModal({ onClose, onSave }) {
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
           <button type="submit" className="flex-1 py-2 rounded-lg bg-[#162238] text-white text-xs font-bold">Save Expense</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ApproveRequestModal({ inquiry, onClose, onApproveAndSavePdf }) {
+  const [form, setForm] = useState({ ...inquiry });
+  const isCars = form.division === 'Tunz Cars';
+  const isTrip = form.pricingMode === 'flat_trip' || form.unitLabel === 'Trip';
+  const qtyVal = Math.max(1, Number(form.qty || 1));
+  const rateVal = Number(form.unitRate || 0);
+  const totalVal = qtyVal * rateVal;
+
+  return (
+    <div className="fixed inset-0 bg-black/65 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onApproveAndSavePdf({ ...form, qty: qtyVal, unitRate: rateVal, totalAmount: totalVal });
+        }}
+        className="bg-white rounded-2xl p-6 max-w-xl w-full space-y-3.5 shadow-2xl my-8"
+      >
+        <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#9A7B3E]">{form.division} • {form.id}</span>
+            <h3 className="text-lg font-extrabold text-[#162238]">Edit & Approve Request → Generate Quote PDF</h3>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg bg-slate-100"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">Client Name *</label>
+            <input required value={form.clientName || ''} onChange={e => setForm({ ...form, clientName: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Organization</label>
+            <input value={form.organization || ''} onChange={e => setForm({ ...form, organization: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">WhatsApp / Phone Number *</label>
+            <input required value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Client Email Address</label>
+            <input type="email" placeholder="client@example.com" value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1">Service / Item Summary *</label>
+          <input required value={form.itemSummary || ''} onChange={e => setForm({ ...form, itemSummary: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+
+        {isCars && (
+          <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div>
+              <label className="block text-xs font-semibold mb-1">Start Date</label>
+              <input
+                type="date"
+                value={form.startDate || ''}
+                onChange={e => {
+                  const s = e.target.value;
+                  const days = calcDaysInclusive(s, form.endDate || s);
+                  setForm({ ...form, startDate: s, qty: isTrip ? 1 : days });
+                }}
+                className="w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">End / Return Date</label>
+              <input
+                type="date"
+                min={form.startDate}
+                value={form.endDate || ''}
+                onChange={e => {
+                  const end = e.target.value;
+                  const days = calcDaysInclusive(form.startDate || end, end);
+                  setForm({ ...form, endDate: end, qty: isTrip ? 1 : days });
+                }}
+                className="w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1">
+              {isCars ? (isTrip ? 'Trips' : 'Duration (Days)') : 'Quantity (Units)'}
+            </label>
+            <input
+              type="number"
+              min="1"
+              required
+              value={form.qty ?? 1}
+              onChange={e => setForm({ ...form, qty: Math.max(1, parseInt(e.target.value || '1', 10) || 1) })}
+              className="w-full border rounded-lg px-3 py-2 text-sm font-bold"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1">Unit / Daily Rate (PGK)</label>
+            <input
+              type="number"
+              step="0.01"
+              required
+              value={form.unitRate ?? 0}
+              onChange={e => setForm({ ...form, unitRate: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2 text-sm font-bold"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1">Quote Terms / Route / Notes</label>
+          <input value={form.details || ''} onChange={e => setForm({ ...form, details: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center text-xs font-extrabold text-[#162238]">
+          <span>Approved Quote Total (10% PNG GST Incl.):</span>
+          <span className="text-base text-[#9E2A2B]">{formatPGK(totalVal)}</span>
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-lg bg-slate-100 text-xs font-bold">Cancel</button>
+          <button type="submit" className="flex-1 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5">
+            <Download className="w-4 h-4" /> Approve, Save Quote PDF & Share
+          </button>
         </div>
       </form>
     </div>
